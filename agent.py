@@ -24,8 +24,11 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
+from reportlab.lib.utils import ImageReader
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Table,
-                                TableStyle, Image, PageBreak, KeepTogether)
+                                TableStyle, Image, PageBreak, KeepTogether, HRFlowable)
 
 try:
     import yfinance as yf
@@ -120,6 +123,22 @@ def safe(fn, default, label=""):
         return default
 
 
+# ------------------------------------------------------------------ FONTS
+# DejaVu TTFs ship inside matplotlib, so nothing to download (works on GitHub Actions).
+FONT_DIR = Path(matplotlib.get_data_path()) / "fonts" / "ttf"
+try:
+    for _n in ("DejaVuSans", "DejaVuSans-Bold", "DejaVuSans-Oblique", "DejaVuSans-BoldOblique",
+               "DejaVuSerif", "DejaVuSerif-Bold", "DejaVuSansMono", "DejaVuSansMono-Bold"):
+        pdfmetrics.registerFont(TTFont(_n, str(FONT_DIR / f"{_n}.ttf")))
+    pdfmetrics.registerFontFamily("DejaVuSans", normal="DejaVuSans", bold="DejaVuSans-Bold",
+                                  italic="DejaVuSans-Oblique", boldItalic="DejaVuSans-BoldOblique")
+    SANS, SANS_B, SERIF_B, MONO, MONO_B = ("DejaVuSans", "DejaVuSans-Bold", "DejaVuSerif-Bold",
+                                           "DejaVuSansMono", "DejaVuSansMono-Bold")
+except Exception as _e:
+    print(f"  ! font registration failed, using built-ins: {_e}")
+    SANS, SANS_B, SERIF_B, MONO, MONO_B = "Helvetica", "Helvetica-Bold", "Times-Bold", "Courier", "Courier-Bold"
+
+
 # ------------------------------------------------------------------ THEME / CHART HELPERS
 NAVY, BLUE, GREEN, RED, GREY, LIGHT = "#0F172A", "#2563EB", "#10B981", "#EF4444", "#64748B", "#F1F5F9"
 PALETTE = [BLUE, GREEN, "#F59E0B", "#8B5CF6", "#EC4899", "#14B8A6", "#F97316"]
@@ -127,23 +146,28 @@ PALETTE = [BLUE, GREEN, "#F59E0B", "#8B5CF6", "#EC4899", "#14B8A6", "#F97316"]
 plt.rcParams.update({
     "font.family": "DejaVu Sans", "axes.spines.top": False, "axes.spines.right": False,
     "axes.edgecolor": "#CBD5E1", "axes.labelcolor": GREY, "xtick.color": GREY,
-    "ytick.color": GREY, "axes.titleweight": "bold", "axes.titlecolor": NAVY,
-    "axes.grid": True, "grid.color": "#E2E8F0", "grid.linewidth": 0.6,
+    "ytick.color": GREY, "axes.grid": True, "grid.color": "#E2E8F0", "grid.linewidth": 0.6,
 })
+
+
+def ttl(ax, text, **kw):
+    ax.set_title(text, loc="left", fontfamily="DejaVu Serif", fontweight="bold", color=NAVY, **kw)
 
 
 def fig_to_image(fig, width_mm=175) -> Image:
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=170, bbox_inches="tight", facecolor="white")
-    w, h = fig.get_size_inches()
     plt.close(fig)
     buf.seek(0)
-    return Image(buf, width=width_mm * mm, height=width_mm * mm * (h / w))
+    iw, ih = ImageReader(buf).getSize()  # real pixel size (bbox_inches="tight" changes it)
+    buf.seek(0)
+    return Image(buf, width=width_mm * mm, height=width_mm * mm * (ih / iw))
 
 
 def latin(s: str) -> str:
-    """Helvetica is latin-1 only; strip anything else so PDFs never show boxes."""
-    return (s or "").encode("latin-1", "ignore").decode("latin-1")
+    """Name kept for compatibility. DejaVu is Unicode, so only strip emoji/zero-width chars."""
+    return "".join(c for c in (s or "") if ord(c) < 0x10000 and not 0xFE00 <= ord(c) <= 0xFE0F
+                   and not 0x200B <= ord(c) <= 0x200F)
 
 
 def P(text, style):  # safe paragraph
@@ -152,6 +176,49 @@ def P(text, style):  # safe paragraph
 
 def link_markup(title, url):
     return f'<a href="{escape(url)}" color="{BLUE}">{escape(latin(title))}</a>'
+
+
+def sparkline_grid(cards, title, cols=3):
+    """Card grid: label, big value, change text, mini trend line. Works from day one."""
+    if not cards:
+        return None
+    rows = (len(cards) + cols - 1) // cols
+    head = 0.55
+    fig, axes = plt.subplots(rows, cols, figsize=(8, 1.75 * rows + head), squeeze=False,
+                             gridspec_kw={"wspace": 0.06, "hspace": 0.12})
+    fig.subplots_adjust(left=0.005, right=0.995, bottom=0.01, top=1 - head / (1.75 * rows + head))
+    fig.suptitle(title, x=0.01, y=0.995, ha="left", fontsize=11, fontweight="bold",
+                 color=NAVY, fontfamily="DejaVu Serif")
+    for ax, c in zip(axes.ravel(), cards):
+        col = GREEN if c["up"] is True else RED if c["up"] is False else GREY
+        ax.set_facecolor(LIGHT)
+        ax.grid(False)
+        ax.set_xticks([])
+        ax.set_yticks([])
+        for sp in ax.spines.values():
+            sp.set_visible(False)
+        ys = c["ys"]
+        if len(ys) >= 2:
+            lo, hi = min(ys), max(ys)
+            span = (hi - lo) or max(abs(hi), 1) * 0.05
+            ax.set_ylim(lo - span * 0.2, hi + span * 2.2)
+            xs = list(range(len(ys)))
+            ax.set_xlim(0, len(ys) - 1)
+            ax.fill_between(xs, ys, lo - span * 0.2, color=col, alpha=0.15)
+            ax.plot(xs, ys, color=col, lw=1.8)
+            ax.scatter([xs[-1]], [ys[-1]], color=col, s=14, zorder=3)
+        else:
+            ax.text(0.06, 0.12, "trend starts after day 2", transform=ax.transAxes,
+                    fontsize=7, color=GREY, style="italic")
+        ax.text(0.06, 0.93, c["label"], transform=ax.transAxes, fontsize=8, color=GREY,
+                fontweight="bold", va="top")
+        ax.text(0.06, 0.80, c["value"], transform=ax.transAxes, fontsize=13, color=NAVY,
+                fontweight="bold", fontfamily="DejaVu Serif", va="top")
+        ax.text(0.06, 0.57, c["sub"], transform=ax.transAxes, fontsize=7.5, color=col,
+                fontweight="bold", va="top")
+    for ax in axes.ravel()[len(cards):]:
+        ax.axis("off")
+    return fig_to_image(fig)
 
 
 # ------------------------------------------------------------------ 1. WEATHER
@@ -166,29 +233,9 @@ def get_weather():
         "latitude": LOCATION["lat"], "longitude": LOCATION["lon"], "timezone": "Africa/Nairobi",
         "current": "temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code",
         "daily": "temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,weather_code",
-        "forecast_days": 7})
+        "forecast_days": 1})
     r.raise_for_status()
     return r.json()
-
-
-def weather_chart(w):
-    d = w["daily"]
-    days = [datetime.fromisoformat(x).strftime("%a %d") for x in d["time"]]
-    fig, ax = plt.subplots(figsize=(8, 3.2))
-    ax.fill_between(days, d["temperature_2m_min"], d["temperature_2m_max"], color=BLUE, alpha=0.15)
-    ax.plot(days, d["temperature_2m_max"], color=RED, marker="o", lw=2, label="High C")
-    ax.plot(days, d["temperature_2m_min"], color=BLUE, marker="o", lw=2, label="Low C")
-    ax.set_ylabel("Temperature (C)")
-    ax2 = ax.twinx()
-    ax2.bar(days, d["precipitation_sum"], color="#38BDF8", alpha=0.45, width=0.5, label="Rain mm")
-    ax2.set_ylabel("Rain (mm)")
-    ax2.grid(False)
-    ax2.spines["right"].set_visible(True)
-    h1, l1 = ax.get_legend_handles_labels()
-    h2, l2 = ax2.get_legend_handles_labels()
-    ax.legend(h1 + h2, l1 + l2, loc="upper center", ncol=3, frameon=False, fontsize=8)
-    ax.set_title(f"{LOCATION['name']} - 7-day forecast", loc="left")
-    return fig_to_image(fig)
 
 
 # ------------------------------------------------------------------ 2. STOCKS
@@ -242,21 +289,16 @@ def collect_nse():
 
 
 def nse_chart(rows):
-    plotted = [r for r in rows if len(r["series"]) >= 2]
-    if not plotted:
-        return None
-    fig, ax = plt.subplots(figsize=(8, 3.4))
-    for i, r in enumerate(plotted):
-        dates = [datetime.fromisoformat(d) for d, _ in r["series"]]
-        base = r["series"][0][1]
-        ax.plot(dates, [(p / base - 1) * 100 for _, p in r["series"]],
-                lw=2, color=PALETTE[i % len(PALETTE)], label=r["sym"])
-    ax.axhline(0, color=GREY, lw=0.8)
-    ax.set_ylabel("Change since tracking began (%)")
-    ax.set_title("NSE watchlist - relative performance", loc="left")
-    ax.legend(ncol=6, frameon=False, fontsize=8, loc="upper center")
-    fig.autofmt_xdate()
-    return fig_to_image(fig)
+    cards = []
+    for r in rows:
+        sub = "no change data yet" if r["pct"] is None else fmt_pct(r["pct"])
+        if not r["fresh"]:
+            sub += "  (stale)"
+        cards.append({"label": f"{r['sym']} | {r['name'][:18]}",
+                      "value": "n/a" if r["price"] is None else f"KES {r['price']:.2f}",
+                      "sub": sub, "ys": [p for _, p in r["series"]],
+                      "up": None if r["pct"] is None else r["pct"] >= 0})
+    return sparkline_grid(cards, "NSE watchlist - trend since tracking began")
 
 
 def global_tech():
@@ -277,18 +319,10 @@ def global_tech():
 
 
 def global_chart(rows):
-    if not rows:
-        return None
-    fig, ax = plt.subplots(figsize=(8, 3.4))
-    for i, r in enumerate(rows):
-        s = r["series"]
-        ax.plot(s.index, (s / s.iloc[0] - 1) * 100, lw=2, color=PALETTE[i % len(PALETTE)], label=r["sym"])
-    ax.axhline(0, color=GREY, lw=0.8)
-    ax.set_ylabel("30-day change (%)")
-    ax.set_title("Big tech - 30-day performance", loc="left")
-    ax.legend(ncol=6, frameon=False, fontsize=8, loc="upper center")
-    fig.autofmt_xdate()
-    return fig_to_image(fig)
+    cards = [{"label": f"{r['sym']} | {r['name']}", "value": f"${r['price']:.2f}",
+              "sub": f"1d {fmt_pct(r['pct'])}   30d {fmt_pct(r['pct30'])}",
+              "ys": r["series"].tolist(), "up": r["pct30"] >= 0} for r in rows]
+    return sparkline_grid(cards, "Big tech - 30-day trend")
 
 
 # ------------------------------------------------------------------ 3. GITHUB
@@ -327,17 +361,28 @@ def collect_github():
 
 def github_charts(g):
     days = [(NOW - timedelta(days=i)).date() for i in range(13, -1, -1)]
-    fig, axes = plt.subplots(1, 2, figsize=(8.4, 3.2), gridspec_kw={"width_ratios": [2.2, 1]})
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(8.4, 3.2), gridspec_kw={"width_ratios": [2.2, 1]})
     vals = [g["per_day"].get(d, 0) for d in days]
-    axes[0].bar([d.strftime("%d %b") for d in days], vals, color=GREEN)
-    axes[0].set_title("Commits pushed - last 14 days", loc="left", fontsize=10)
-    axes[0].tick_params(axis="x", rotation=60, labelsize=7)
+    peak = max(vals) if vals else 0
+    xs = list(range(len(days)))
+    a1.bar(xs, vals, width=0.7, color=[GREEN if (v == peak and v > 0) else "#A7F3D0" for v in vals])
+    for x, v in zip(xs, vals):
+        if v:
+            a1.text(x, v + peak * 0.03, str(v), ha="center", fontsize=7, color=NAVY, fontweight="bold")
+    a1.set_xticks(xs)
+    a1.set_xticklabels([d.strftime("%d %b") for d in days], rotation=60, fontsize=7)
+    a1.grid(False, axis="x")
+    a1.spines["left"].set_visible(False)
+    a1.set_yticks([])
+    ttl(a1, "Commits pushed - last 14 days", fontsize=10)
     top = g["langs"].most_common(6)
     if top:
-        axes[1].pie([c for _, c in top], labels=[l for l, _ in top], colors=PALETTE,
-                    textprops={"fontsize": 7}, wedgeprops={"width": 0.45, "edgecolor": "white"})
-        axes[1].set_title("Repo languages", fontsize=10)
-    axes[1].grid(False)
+        a2.pie([c for _, c in top], labels=[l for l, _ in top], colors=PALETTE,
+               textprops={"fontsize": 7}, wedgeprops={"width": 0.38, "edgecolor": "white"})
+        a2.text(0, 0, f"{sum(g['langs'].values())}\nrepos", ha="center", va="center",
+                fontsize=9, fontweight="bold", color=NAVY, fontfamily="DejaVu Serif")
+        ttl(a2, "Repo languages", fontsize=10)
+    a2.grid(False)
     fig.tight_layout()
     return fig_to_image(fig)
 
@@ -413,7 +458,7 @@ def reddit_chart(reddit):
     ax.bar([i + 0.2 for i in x], comments, 0.4, color="#F59E0B", label="Comments (top 5)")
     ax.set_xticks(list(x))
     ax.set_xticklabels(labels)
-    ax.set_title("Reddit buzz by language - today", loc="left")
+    ttl(ax, "Reddit buzz by language - today")
     ax.legend(frameon=False, fontsize=8)
     return fig_to_image(fig)
 
@@ -429,16 +474,22 @@ def takeaways(section, items):
 
 # ------------------------------------------------------------------ 5. PDF BUILD
 ss = getSampleStyleSheet()
-H1 = ParagraphStyle("H1", parent=ss["Title"], fontName="Helvetica-Bold", fontSize=24,
-                    textColor=colors.white, alignment=0, leading=28)
-SUB = ParagraphStyle("SUB", parent=ss["Normal"], fontSize=10, textColor=colors.HexColor("#CBD5E1"))
-H2 = ParagraphStyle("H2", parent=ss["Heading2"], fontName="Helvetica-Bold", fontSize=15,
-                    textColor=colors.HexColor(NAVY), spaceBefore=10, spaceAfter=6)
-H3 = ParagraphStyle("H3", parent=ss["Heading3"], fontSize=11, textColor=colors.HexColor(BLUE),
-                    spaceBefore=8, spaceAfter=3)
-BODY = ParagraphStyle("BODY", parent=ss["Normal"], fontSize=9, leading=13, textColor=colors.HexColor("#334155"))
+H1 = ParagraphStyle("H1", parent=ss["Title"], fontName=SERIF_B, fontSize=26,
+                    textColor=colors.white, alignment=0, leading=30)
+SUB = ParagraphStyle("SUB", parent=ss["Normal"], fontName=SANS, fontSize=10, textColor=colors.HexColor("#CBD5E1"))
+H2 = ParagraphStyle("H2", parent=ss["Heading2"], fontName=SERIF_B, fontSize=16,
+                    textColor=colors.HexColor(NAVY), spaceBefore=12, spaceAfter=2)
+H3 = ParagraphStyle("H3", parent=ss["Heading3"], fontName=SANS_B, fontSize=10.5,
+                    textColor=colors.HexColor(BLUE), spaceBefore=8, spaceAfter=3)
+BODY = ParagraphStyle("BODY", parent=ss["Normal"], fontName=SANS, fontSize=9, leading=13,
+                      textColor=colors.HexColor("#334155"))
 SMALL = ParagraphStyle("SMALL", parent=BODY, fontSize=8, textColor=colors.HexColor(GREY))
 BUL = ParagraphStyle("BUL", parent=BODY, leftIndent=10, bulletIndent=0, spaceAfter=2)
+
+
+def section(title):
+    return [P(title, H2), HRFlowable(width="100%", thickness=1.4, color=colors.HexColor(BLUE),
+                                     spaceBefore=0, spaceAfter=6)]
 
 
 def banner(title, subtitle):
@@ -451,8 +502,9 @@ def banner(title, subtitle):
 
 
 def kpi_row(items):
-    cells = [[Paragraph(f'<font size="16" color="{NAVY}"><b>{escape(str(v))}</b></font><br/>'
-                        f'<font size="7" color="{GREY}">{escape(k.upper())}</font>', BODY) for k, v in items]]
+    cells = [[Paragraph(f'<font name="{SERIF_B}" size="15" color="{NAVY}">{escape(str(v))}</font><br/>'
+                        f'<font name="{SANS}" size="7" color="{GREY}">{escape(k.upper())}</font>', BODY)
+              for k, v in items]]
     t = Table(cells, colWidths=[180 * mm / len(items)] * len(items))
     t.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(LIGHT)),
                            ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
@@ -461,19 +513,22 @@ def kpi_row(items):
     return t
 
 
-def data_table(header, rows, col_widths, trend_col=None):
+def data_table(header, rows, col_widths, trend_col=None, mono_cols=()):
     t = Table([header] + rows, colWidths=[c * mm for c in col_widths], repeatRows=1)
     style = [("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(NAVY)), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-             ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+             ("FONTNAME", (0, 0), (-1, 0), SANS_B), ("FONTNAME", (0, 1), (-1, -1), SANS),
+             ("FONTSIZE", (0, 0), (-1, -1), 8.5),
              ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor(LIGHT)]),
              ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#E2E8F0")),
              ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5)]
+    for c in mono_cols:
+        style.append(("FONTNAME", (c, 1), (c, -1), MONO))
     if trend_col is not None:
         for i, row in enumerate(rows, start=1):
             txt = str(row[trend_col])
             c = GREEN if txt.startswith("+") else RED if txt.startswith("-") else GREY
             style += [("TEXTCOLOR", (trend_col, i), (trend_col, i), colors.HexColor(c)),
-                      ("FONTNAME", (trend_col, i), (trend_col, i), "Helvetica-Bold")]
+                      ("FONTNAME", (trend_col, i), (trend_col, i), MONO_B)]
     t.setStyle(TableStyle(style))
     return t
 
@@ -484,7 +539,7 @@ def fmt_pct(p):
 
 def footer(canvas, doc):
     canvas.saveState()
-    canvas.setFont("Helvetica", 7.5)
+    canvas.setFont(SANS, 7.5)
     canvas.setFillColor(colors.HexColor(GREY))
     canvas.drawString(15 * mm, 8 * mm, f"Tech Radar - {TODAY_PRETTY} - Powered by {LLM_NAME}")
     canvas.drawRightString(195 * mm, 8 * mm, f"Page {doc.page}")
@@ -497,57 +552,62 @@ def build_pdf(path, weather, nse, glob, gh_data, news, reddit, brief, news_take)
     s = [banner("Daily Tech Radar", f"{TODAY_PRETTY}  |  {LOCATION['name']}  |  Prepared for Steve"), Spacer(1, 8)]
 
     if brief:
-        s += [P("Today's brief", H2)] + [P(l.lstrip("-* ").strip(), BUL) for l in brief.splitlines() if l.strip()]
+        s += section("Today's brief") + [P(l.lstrip("-* ").strip(), BUL) for l in brief.splitlines() if l.strip()]
 
-    # Weather
+    # Weather: one compact card
     if weather:
         c, d = weather["current"], weather["daily"]
-        s += [P("Weather - " + LOCATION["name"], H2),
-              kpi_row([("Now", f"{c['temperature_2m']:.0f} C"), ("Conditions", WMO.get(c["weather_code"], "-")),
-                       ("Humidity", f"{c['relative_humidity_2m']}%"), ("Wind", f"{c['wind_speed_10m']:.0f} km/h"),
-                       ("Rain today", f"{d['precipitation_probability_max'][0]}%")]),
-              Spacer(1, 6), weather_chart(weather)]
+        s += [Spacer(1, 6), P(f"{LOCATION['name']} weather - today", H3),
+              kpi_row([("Now", f"{c['temperature_2m']:.0f} C"),
+                       ("High / Low", f"{d['temperature_2m_max'][0]:.0f} / {d['temperature_2m_min'][0]:.0f} C"),
+                       ("Conditions", WMO.get(c["weather_code"], "-")),
+                       ("Rain chance", f"{d['precipitation_probability_max'][0]}%"),
+                       ("Wind", f"{c['wind_speed_10m']:.0f} km/h")])]
 
     # Markets
-    s += [PageBreak(), P("Markets", H2), P("NSE watchlist (KES)", H3)]
-    rows = [[r["name"], r["sym"], "n/a" if r["price"] is None else f"{r['price']:.2f}", fmt_pct(r["pct"]),
-             "live" if r["fresh"] else "stale"] for r in nse]
-    s.append(data_table(["Company", "Ticker", "Price", "Change", "Data"], rows, [60, 25, 30, 30, 25], trend_col=3))
-    ch = nse_chart(nse)
-    s += [Spacer(1, 6)] + ([ch] if ch else [P("Trend charts appear once 2+ days of history are stored.", SMALL)])
+    s += section("Markets")
+    if nse:
+        s.append(P("NSE watchlist (KES)", H3))
+        rows = [[r["name"], r["sym"], "n/a" if r["price"] is None else f"{r['price']:.2f}", fmt_pct(r["pct"]),
+                 "live" if r["fresh"] else "stale"] for r in nse]
+        s.append(data_table(["Company", "Ticker", "Price", "Change", "Data"], rows, [60, 25, 30, 30, 25],
+                            trend_col=3, mono_cols=(2,)))
+        ch = nse_chart(nse)
+        if ch:
+            s += [Spacer(1, 6), ch]
     s.append(P("Dangote Petroleum Refinery is unlisted, so no price is available.", SMALL))
     if glob:
         s += [P("Global tech giants (USD)", H3),
               data_table(["Company", "Ticker", "Price", "1d", "30d"],
                          [[r["name"], r["sym"], f"${r['price']:.2f}", fmt_pct(r["pct"]), fmt_pct(r["pct30"])]
                           for r in glob],
-                         [55, 25, 30, 30, 30], trend_col=3), Spacer(1, 6), global_chart(glob)]
+                         [55, 25, 30, 30, 30], trend_col=3, mono_cols=(2, 4)), Spacer(1, 6), global_chart(glob)]
 
     # GitHub
     if gh_data:
         u = gh_data["user"]
-        s += [PageBreak(), P(f"GitHub - {GITHUB_USER}", H2),
-              kpi_row([("Commits (14d)", gh_data["total14"]), ("Public repos", u["public_repos"]),
-                       ("Stars", gh_data["stars"]), ("Followers", u["followers"])]),
-              Spacer(1, 6), github_charts(gh_data)]
+        s += [PageBreak()] + section(f"GitHub - {GITHUB_USER}") + [
+            kpi_row([("Commits (14d)", gh_data["total14"]), ("Public repos", u["public_repos"]),
+                     ("Stars", gh_data["stars"]), ("Followers", u["followers"])]),
+            Spacer(1, 6), github_charts(gh_data)]
         if gh_data["pushes"]:
             s += [P("Recent pushes", H3),
                   data_table(["When", "Repo", "#", "Latest message"],
                              [[w, r.split("/")[-1], n, latin(m)[:55]] for w, r, n, m in gh_data["pushes"]],
-                             [28, 45, 10, 97])]
+                             [28, 45, 10, 97], mono_cols=(0,))]
 
     # News
-    s += [PageBreak(), P("News & Intelligence", H2)]
-    for section, items in news.items():
-        block = [P(section, H3)]
-        if news_take.get(section):
-            block += [P(l.lstrip("-* ").strip(), BUL) for l in news_take[section].splitlines() if l.strip()]
+    s += [PageBreak()] + section("News & Intelligence")
+    for sec, items in news.items():
+        block = [P(sec, H3)]
+        if news_take.get(sec):
+            block += [P(l.lstrip("-* ").strip(), BUL) for l in news_take[sec].splitlines() if l.strip()]
         block.append(Spacer(1, 2))
         block += [Paragraph("&bull; " + link_markup(i["title"], i["url"]), SMALL) for i in items]
         s.append(KeepTogether(block))
 
     # Reddit
-    s += [PageBreak(), P("Reddit - what developers are discussing", H2)]
+    s += [PageBreak()] + section("Reddit - what developers are discussing")
     rc = reddit_chart(reddit)
     if rc:
         s.append(rc)
@@ -572,7 +632,7 @@ def send_email(pdf_path, preview):
     msg["Subject"] = f"Daily Tech Radar - {TODAY_PRETTY}"
     msg["From"], msg["To"] = SENDER_EMAIL, RECIPIENT_EMAIL
     html = f"""<div style="font-family:Segoe UI,Arial,sans-serif;max-width:560px">
-      <h2 style="color:#0F172A;border-bottom:3px solid #2563EB;padding-bottom:6px">Daily Tech Radar</h2>
+      <h2 style="font-family:Georgia,serif;color:#0F172A;border-bottom:3px solid #2563EB;padding-bottom:6px">Daily Tech Radar</h2>
       <p style="color:#64748B">{escape(TODAY_PRETTY)}</p>
       <div style="color:#334155;line-height:1.6">{preview}</div>
       <p style="color:#94A3B8;font-size:12px">Full report with charts attached (PDF).</p></div>"""
