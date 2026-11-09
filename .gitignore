@@ -1,0 +1,5 @@
+.venv/
+.idea/
+output/
+__pycache__/
+tech_digest_*.md
