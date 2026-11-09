@@ -1,0 +1,26 @@
+name: Tech Radar
+on:
+  schedule:
+    - cron: "0 3 * * *"   # 06:00 Nairobi
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - run: python agent.py
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          GH_PAT: ${{ secrets.GH_PAT }}
+      - name: Persist price history
+        run: |
+          git config user.name "tech-radar-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add data/nse_history.csv
+          git diff --cached --quiet || (git commit -m "chore: update NSE history" && git push)
