@@ -6,6 +6,7 @@ import json
 import time
 import smtplib
 from datetime import datetime, timedelta
+from html.parser import HTMLParser
 from pathlib import Path
 from collections import Counter, defaultdict
 from email.mime.multipart import MIMEMultipart
@@ -27,8 +28,8 @@ from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Table,
-                                TableStyle, Image, PageBreak, KeepTogether, HRFlowable)
+from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image,
+                                CondPageBreak, KeepTogether, HRFlowable)
 
 try:
     import yfinance as yf
@@ -48,18 +49,17 @@ GH_PAT = os.environ.get("GH_PAT")  # PAT (read:user, repo) -> includes private a
 
 LOCATION = {"name": "Nairobi", "lat": -1.2921, "lon": 36.8219}
 
-# NSE tickers as on afx.kwayisi.org/nseke. Dangote Petroleum Refinery is NOT listed on
-# any exchange, so it cannot be priced. Quickmart (QMART) is not in the NSE listing either;
-# it shows n/a and will appear automatically if it ever lists.
+# NSE tickers. Dangote Petroleum Refinery is NOT listed on any exchange, so it cannot be priced.
+# Quickmart (QMART) is not in the NSE listing either; it shows "not found" and will appear
+# automatically if it ever lists. Eveready East Africa is "EVRD"; EGAD is Eaagads.
 NSE_WATCHLIST = {
     "Co-op Bank": "COOP",
     "Stanbic Holdings": "SBIC",
     "EABL": "EABL",
     "BK Group": "BKG",
-    "Eaagads": "EGAD",          # Eveready East Africa is "EVRD"
+    "Eaagads": "EGAD",
     "Quickmart": "QMART",
 }
-NSE_URL = "https://afx.kwayisi.org/nseke"
 HISTORY_START = "2026-11-10"  # ignore stored prices before this (older scraper was inaccurate)
 
 GLOBAL_TECH = {"NVIDIA": "NVDA", "Microsoft": "MSFT", "Apple": "AAPL",
@@ -183,7 +183,8 @@ def link_markup(title, url):
 
 
 def sparkline_grid(cards, title, cols=3):
-    """Card grid: label, big value, change text, mini trend line. Works from day one."""
+    """Card grid: label, big value, colored change texts, mini trend line.
+    card = {label, value, subs:[(text, up|None), ...], ys:[...], up: bool|None}"""
     if not cards:
         return None
     rows = (len(cards) + cols - 1) // cols
@@ -193,8 +194,12 @@ def sparkline_grid(cards, title, cols=3):
     fig.subplots_adjust(left=0.005, right=0.995, bottom=0.01, top=1 - head / (1.75 * rows + head))
     fig.suptitle(title, x=0.01, y=0.995, ha="left", fontsize=11, fontweight="bold",
                  color=NAVY, fontfamily="DejaVu Serif")
+
+    def tone(up):
+        return GREEN if up is True else RED if up is False else GREY
+
     for ax, c in zip(axes.ravel(), cards):
-        col = GREEN if c["up"] is True else RED if c["up"] is False else GREY
+        col = tone(c["up"])
         ax.set_facecolor(LIGHT)
         ax.grid(False)
         ax.set_xticks([])
@@ -212,14 +217,15 @@ def sparkline_grid(cards, title, cols=3):
             ax.plot(xs, ys, color=col, lw=1.8)
             ax.scatter([xs[-1]], [ys[-1]], color=col, s=14, zorder=3)
         else:
-            ax.text(0.06, 0.12, "trend starts after day 2", transform=ax.transAxes,
+            ax.text(0.06, 0.12, "trend builds daily", transform=ax.transAxes,
                     fontsize=7, color=GREY, style="italic")
         ax.text(0.06, 0.93, c["label"], transform=ax.transAxes, fontsize=8, color=GREY,
                 fontweight="bold", va="top")
         ax.text(0.06, 0.80, c["value"], transform=ax.transAxes, fontsize=13, color=NAVY,
                 fontweight="bold", fontfamily="DejaVu Serif", va="top")
-        ax.text(0.06, 0.57, c["sub"], transform=ax.transAxes, fontsize=7.5, color=col,
-                fontweight="bold", va="top")
+        for i, (txt, up) in enumerate(c["subs"]):
+            ax.text(0.06 + i * 0.44, 0.57, txt, transform=ax.transAxes, fontsize=7.5,
+                    color=tone(up), fontweight="bold", va="top")
     for ax in axes.ravel()[len(cards):]:
         ax.axis("off")
     return fig_to_image(fig)
@@ -243,34 +249,120 @@ def get_weather():
 
 
 # ------------------------------------------------------------------ 2. STOCKS
+class _RowParser(HTMLParser):
+    """Collects <tr> rows as lists of cell texts. Tolerates missing closing tags."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.rows, self._row, self._cell = [], None, None
+
+    def _end_cell(self):
+        if self._cell is not None and self._row is not None:
+            self._row.append("".join(self._cell).strip())
+        self._cell = None
+
+    def _end_row(self):
+        self._end_cell()
+        if self._row:
+            self.rows.append(self._row)
+        self._row = None
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "tr":
+            self._end_row()
+            self._row = []
+        elif tag in ("td", "th"):
+            self._end_cell()
+            if self._row is None:
+                self._row = []
+            self._cell = []
+
+    def handle_endtag(self, tag):
+        if tag in ("td", "th"):
+            self._end_cell()
+        elif tag in ("tr", "table", "tbody", "thead"):
+            self._end_row()
+
+    def handle_data(self, data):
+        if self._cell is not None:
+            self._cell.append(data)
+
+
+def parse_rows(html):
+    p = _RowParser()
+    p.feed(html)
+    p.close()
+    p._end_row()
+    return p.rows
+
+
 def _num(s):
     try:
-        return float(s.replace(",", "").replace("+", "").strip())
+        return float(str(s).replace(",", "").replace("+", "").replace("%", "").strip())
     except Exception:
         return None
 
 
-def get_nse_table():
-    """One request -> {ticker: (last_close, abs_change)} for every NSE stock.
-    Source: afx.kwayisi.org/nseke (table: Ticker, Name, Volume, Price, Change)."""
-    r = requests.get(NSE_URL, timeout=20, headers={
+def _http_get(url):
+    r = requests.get(url, timeout=20, headers={
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                      "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"})
+                      "(KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml", "Accept-Language": "en-US,en;q=0.9"})
     r.raise_for_status()
+    return r.text
+
+
+def _debug_dump(name, html, rows):
+    (OUT_DIR / f"debug_{name}.html").write_text(html[:200000], encoding="utf-8")
+    print(f"  ! {name}: {len(rows)} table rows parsed, sample: {rows[:2]}")
+
+
+TICKER_RE = re.compile(r"[A-Z0-9\-]{2,8}")
+
+
+def _nse_stockanalysis():
+    """Columns: No. | Symbol | Company | Market Cap | Price | % Change | Revenue"""
+    html = _http_get("https://stockanalysis.com/list/nairobi-stock-exchange/")
+    rows = parse_rows(html)
     out = {}
-    for tr in re.findall(r"<tr[^>]*>(.*?)</tr>", r.text, re.S | re.I):
-        cells = [re.sub(r"<[^>]+>", "", c).strip()
-                 for c in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", tr, re.S | re.I)]
-        if len(cells) < 4 or not re.fullmatch(r"[A-Z0-9\-]{2,8}", cells[0]):
-            continue
-        price = _num(cells[3])
-        chg = _num(cells[4]) if len(cells) > 4 else None
-        if price:
-            out[cells[0]] = (price, chg)
-    print(f"  NSE table: parsed {len(out)} tickers")
+    for c in rows:
+        if len(c) >= 6 and TICKER_RE.fullmatch(c[1]):
+            price = _num(c[4])
+            if price:
+                out[c[1]] = (price, _num(c[5]))
     if len(out) < 10:
-        raise RuntimeError("NSE table parse looks wrong (site layout changed or blocked)")
+        _debug_dump("stockanalysis", html, rows)
     return out
+
+
+def _nse_afx():
+    """Columns: Ticker | Name | Volume | Price | Change (absolute)"""
+    html = _http_get("https://afx.kwayisi.org/nseke")
+    rows = parse_rows(html)
+    out = {}
+    for c in rows:
+        if len(c) >= 4 and TICKER_RE.fullmatch(c[0]):
+            price = _num(c[3])
+            chg = _num(c[4]) if len(c) > 4 else None
+            if price:
+                pct = chg / (price - chg) * 100 if (chg is not None and price - chg > 0) else None
+                out[c[0]] = (price, pct)
+    if len(out) < 10:
+        _debug_dump("afx", html, rows)
+    return out
+
+
+def get_nse_table():
+    """{ticker: (last_close, pct_change|None)} from the first source that works."""
+    for fn in (_nse_stockanalysis, _nse_afx):
+        try:
+            out = fn()
+            if len(out) >= 10:
+                print(f"  NSE source {fn.__name__}: {len(out)} tickers")
+                return out
+        except Exception as e:
+            print(f"  ! {fn.__name__}: {e}")
+    raise RuntimeError("all NSE sources failed")
 
 
 def load_history():
@@ -297,13 +389,13 @@ def collect_nse():
     table = safe(get_nse_table, {}, "nse table")
     rows = []
     for name, sym in NSE_WATCHLIST.items():
-        price, chg = table.get(sym, (None, None))
+        price, pct_src = table.get(sym, (None, None))
         if price is not None:
             hist[sym][TODAY] = price
         series = sorted(hist[sym].items())
         cur = series[-1][1] if series else None
-        if price is not None and chg is not None and price - chg > 0:
-            pct = chg / (price - chg) * 100          # last-session change from the source
+        if pct_src is not None:
+            pct = pct_src                              # last-session change from the source
         else:
             prev = series[-2][1] if len(series) >= 2 else None
             pct = ((cur - prev) / prev * 100) if (cur and prev) else None
@@ -316,14 +408,16 @@ def collect_nse():
 def nse_chart(rows):
     cards = []
     for r in rows:
-        sub = "no change data yet" if r["pct"] is None else fmt_pct(r["pct"])
-        if not r["fresh"]:
-            sub += "  (stale)" if r["price"] is not None else ""
+        if r["price"] is None:
+            subs = [("not found on NSE", None)]
+        else:
+            subs = [(fmt_pct(r["pct"]) + ("" if r["fresh"] else "  (stale)"),
+                     None if r["pct"] is None else r["pct"] >= 0)]
         cards.append({"label": f"{r['sym']} | {r['name'][:18]}",
                       "value": "n/a" if r["price"] is None else f"KES {r['price']:.2f}",
-                      "sub": sub, "ys": [p for _, p in r["series"]],
+                      "subs": subs, "ys": [p for _, p in r["series"]],
                       "up": None if r["pct"] is None else r["pct"] >= 0})
-    return sparkline_grid(cards, "NSE watchlist - trend since tracking began")
+    return sparkline_grid(cards, "NSE watchlist - last close and trend")
 
 
 def global_tech():
@@ -345,7 +439,7 @@ def global_tech():
 
 def global_chart(rows):
     cards = [{"label": f"{r['sym']} | {r['name']}", "value": f"${r['price']:.2f}",
-              "sub": f"1d {fmt_pct(r['pct'])}   30d {fmt_pct(r['pct30'])}",
+              "subs": [(f"1d {fmt_pct(r['pct'])}", r["pct"] >= 0), (f"30d {fmt_pct(r['pct30'])}", r["pct30"] >= 0)],
               "ys": r["series"].tolist(), "up": r["pct30"] >= 0} for r in rows]
     return sparkline_grid(cards, "Big tech - 30-day trend")
 
@@ -360,23 +454,40 @@ def gh(path, params=None):
     return r.json()
 
 
+def push_details(repo, before, head):
+    """Events no longer carry commits, so ask the API: (commit_count, latest_message)."""
+    try:
+        if before and set(before) != {"0"}:
+            c = gh(f"/repos/{repo}/compare/{before}...{head}")
+            msgs = [x["commit"]["message"].split("\n")[0] for x in c.get("commits", [])]
+            return (c.get("total_commits") or len(msgs) or 1), (msgs[-1] if msgs else "")
+        c = gh(f"/repos/{repo}/commits/{head}")
+        return 1, c["commit"]["message"].split("\n")[0]
+    except Exception:
+        return 1, ""
+
+
 def collect_github():
     user = gh(f"/users/{GITHUB_USER}")
     repos = gh(f"/users/{GITHUB_USER}/repos", {"per_page": 100, "sort": "pushed"})
     events = gh(f"/users/{GITHUB_USER}/events", {"per_page": 100})
     since = NOW - timedelta(days=14)
-    per_day, pushes, repo_commits = Counter(), [], Counter()
+    per_day, pushes, repo_commits, lookups = Counter(), [], Counter(), 0
     for e in events:
         if e["type"] != "PushEvent":
             continue
         ts = datetime.fromisoformat(e["created_at"].replace("Z", "+00:00")).astimezone(TZ)
         if ts < since:
             continue
-        n = e["payload"].get("size") or len(e["payload"].get("commits", [])) or 1
+        p = e["payload"]
+        if lookups < 25:
+            n, msg = push_details(e["repo"]["name"], p.get("before"), p.get("head"))
+            lookups += 1
+        else:
+            n, msg = p.get("size") or 1, ""
         per_day[ts.date()] += n
         repo_commits[e["repo"]["name"]] += n
-        msgs = [c["message"].split("\n")[0] for c in e["payload"].get("commits", [])]
-        pushes.append((ts.strftime("%d %b %H:%M"), e["repo"]["name"], n, msgs[0] if msgs else ""))
+        pushes.append((ts.strftime("%d %b %H:%M"), e["repo"]["name"], n, msg))
     langs = Counter(r["language"] for r in repos if r.get("language") and not r.get("fork"))
     return {"user": user, "repos": repos, "per_day": per_day, "pushes": pushes[:10],
             "repo_commits": repo_commits, "langs": langs,
@@ -431,8 +542,13 @@ def collect_news(per_section=6):
     return out
 
 
+def _sub_of(url):
+    m = re.search(r"/r/([^/]+)/", url or "")
+    return m.group(1).lower() if m else ""
+
+
 def collect_reddit():
-    """RSS with pacing, retry/backoff on 429, and last-good cache fallback."""
+    """One combined RSS request (avoids 429s), per-sub fallback, then last-good cache."""
     cache = {}
     if REDDIT_CACHE.exists():
         try:
@@ -440,33 +556,36 @@ def collect_reddit():
         except Exception:
             cache = {}
     headers = {"User-Agent": "Mozilla/5.0 (compatible; TechRadarAgent/1.0; personal use)"}
+    by_sub = defaultdict(list)
+    combined_ok = False
+    try:
+        r = requests.get("https://www.reddit.com/r/" + "+".join(REDDIT_LANGS.values()) + "/top.rss",
+                         params={"t": "day", "limit": 100}, headers=headers, timeout=15)
+        r.raise_for_status()
+        for e in feedparser.parse(r.content).entries:
+            by_sub[_sub_of(e.link)].append({"title": e.title, "url": e.link, "score": None, "comments": None})
+        combined_ok = bool(by_sub)
+    except Exception as e:
+        print(f"  ! reddit combined: {e}")
+
     out = {}
     for label, sub in REDDIT_LANGS.items():
-        posts = []
-        for attempt in range(1, 4):
+        posts = by_sub.get(sub.lower(), [])[:5]
+        if not posts and combined_ok:                 # combined worked but this sub was too quiet
             try:
-                r = requests.get(f"https://www.reddit.com/r/{sub}/top.rss?t=day",
-                                 headers=headers, timeout=10)
-                if r.status_code == 429:
-                    wait = int(r.headers.get("Retry-After", 5 * attempt))
-                    print(f"  ... r/{sub} rate-limited, waiting {min(wait, 30)}s")
-                    time.sleep(min(wait, 30))
-                    continue
+                time.sleep(4)
+                r = requests.get(f"https://www.reddit.com/r/{sub}/top.rss?t=day", headers=headers, timeout=10)
                 r.raise_for_status()
-                feed = feedparser.parse(r.content)
                 posts = [{"title": e.title, "url": e.link, "score": None, "comments": None}
-                         for e in feed.entries[:5]]
-                break
+                         for e in feedparser.parse(r.content).entries[:5]]
             except Exception as e:
                 print(f"  ! reddit r/{sub}: {e}")
-                break
         if posts:
             cache[label] = posts
         elif cache.get(label):
             print(f"  ... r/{sub}: using cached posts")
             posts = cache[label]
         out[label] = posts
-        time.sleep(3)  # pace requests
     REDDIT_CACHE.write_text(json.dumps(cache), encoding="utf-8")
     return out
 
@@ -512,9 +631,10 @@ SMALL = ParagraphStyle("SMALL", parent=BODY, fontSize=8, textColor=colors.HexCol
 BUL = ParagraphStyle("BUL", parent=BODY, leftIndent=10, bulletIndent=0, spaceAfter=2)
 
 
-def section(title):
-    return [P(title, H2), HRFlowable(width="100%", thickness=1.4, color=colors.HexColor(BLUE),
-                                     spaceBefore=0, spaceAfter=6)]
+def section(title, need_mm=70):
+    """Heading + rule; CondPageBreak moves it to a new page only if little room is left."""
+    return [CondPageBreak(need_mm * mm), P(title, H2),
+            HRFlowable(width="100%", thickness=1.4, color=colors.HexColor(BLUE), spaceBefore=0, spaceAfter=6)]
 
 
 def banner(title, subtitle):
@@ -538,7 +658,7 @@ def kpi_row(items):
     return t
 
 
-def data_table(header, rows, col_widths, trend_col=None, mono_cols=()):
+def data_table(header, rows, col_widths, mono_cols=()):
     t = Table([header] + rows, colWidths=[c * mm for c in col_widths], repeatRows=1)
     style = [("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(NAVY)), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
              ("FONTNAME", (0, 0), (-1, 0), SANS_B), ("FONTNAME", (0, 1), (-1, -1), SANS),
@@ -548,18 +668,17 @@ def data_table(header, rows, col_widths, trend_col=None, mono_cols=()):
              ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5)]
     for c in mono_cols:
         style.append(("FONTNAME", (c, 1), (c, -1), MONO))
-    if trend_col is not None:
-        for i, row in enumerate(rows, start=1):
-            txt = str(row[trend_col])
-            c = GREEN if txt.startswith("+") else RED if txt.startswith("-") else GREY
-            style += [("TEXTCOLOR", (trend_col, i), (trend_col, i), colors.HexColor(c)),
-                      ("FONTNAME", (trend_col, i), (trend_col, i), MONO_B)]
     t.setStyle(TableStyle(style))
     return t
 
 
 def fmt_pct(p):
     return "n/a" if p is None else f"{p:+.2f}%"
+
+
+def trunc(s, n):
+    s = latin(s or "")
+    return s if len(s) <= n else s[:n - 1] + "..."
 
 
 def footer(canvas, doc):
@@ -577,7 +696,7 @@ def build_pdf(path, weather, nse, glob, gh_data, news, reddit, brief, news_take)
     s = [banner("Daily Tech Radar", f"{TODAY_PRETTY}  |  {LOCATION['name']}  |  Prepared for Steve"), Spacer(1, 8)]
 
     if brief:
-        s += section("Today's brief") + [P(l.lstrip("-* ").strip(), BUL) for l in brief.splitlines() if l.strip()]
+        s += section("Today's brief", 40) + [P(l.lstrip("-* ").strip(), BUL) for l in brief.splitlines() if l.strip()]
 
     # Weather: one compact card
     if weather:
@@ -589,44 +708,41 @@ def build_pdf(path, weather, nse, glob, gh_data, news, reddit, brief, news_take)
                        ("Rain chance", f"{d['precipitation_probability_max'][0]}%"),
                        ("Wind", f"{c['wind_speed_10m']:.0f} km/h")])]
 
-    # Markets
-    s += section("Markets")
+    # Markets (cards only: they carry price, change and trend)
+    s += section("Markets", 90)
     if nse:
-        s.append(P("NSE watchlist (KES, last close)", H3))
-        rows = [[r["name"], r["sym"], "n/a" if r["price"] is None else f"{r['price']:.2f}", fmt_pct(r["pct"]),
-                 "close" if r["fresh"] else ("stale" if r["price"] is not None else "not found")] for r in nse]
-        s.append(data_table(["Company", "Ticker", "Price", "Change", "Data"], rows, [60, 25, 30, 30, 25],
-                            trend_col=3, mono_cols=(2,)))
         ch = nse_chart(nse)
         if ch:
-            s += [Spacer(1, 6), ch]
+            s.append(ch)
         missing = [r["sym"] for r in nse if r["price"] is None]
-        note = "Prices are end-of-day closes (not live). Dangote Petroleum Refinery is unlisted, so no price."
-        if missing:
-            note += f" No NSE listing found for: {', '.join(missing)}."
+        if len(missing) == len(nse):
+            note = "NSE price sources were unreachable for this run."
+        else:
+            note = "NSE prices are end-of-day closes (not live)."
+            if missing:
+                note += f" No NSE listing found for: {', '.join(missing)}."
+        note += " Dangote Petroleum Refinery is unlisted, so no price."
         s.append(P(note, SMALL))
     if glob:
-        s += [P("Global tech giants (USD)", H3),
-              data_table(["Company", "Ticker", "Price", "1d", "30d"],
-                         [[r["name"], r["sym"], f"${r['price']:.2f}", fmt_pct(r["pct"]), fmt_pct(r["pct30"])]
-                          for r in glob],
-                         [55, 25, 30, 30, 30], trend_col=3, mono_cols=(2, 4)), Spacer(1, 6), global_chart(glob)]
+        gc = global_chart(glob)
+        if gc:
+            s += [Spacer(1, 8), gc]
 
     # GitHub
     if gh_data:
         u = gh_data["user"]
-        s += [PageBreak()] + section(f"GitHub - {GITHUB_USER}") + [
+        s += section(f"GitHub - {GITHUB_USER}", 110) + [
             kpi_row([("Commits (14d)", gh_data["total14"]), ("Public repos", u["public_repos"]),
                      ("Stars", gh_data["stars"]), ("Followers", u["followers"])]),
             Spacer(1, 6), github_charts(gh_data)]
         if gh_data["pushes"]:
             s += [P("Recent pushes", H3),
                   data_table(["When", "Repo", "#", "Latest message"],
-                             [[w, r.split("/")[-1], n, latin(m)[:55]] for w, r, n, m in gh_data["pushes"]],
-                             [28, 45, 10, 97], mono_cols=(0,))]
+                             [[w, trunc(r.split("/")[-1], 26), n, trunc(m, 48)] for w, r, n, m in gh_data["pushes"]],
+                             [28, 55, 10, 87], mono_cols=(0,))]
 
     # News
-    s += [PageBreak()] + section("News & Intelligence")
+    s += section("News & Intelligence", 60)
     for sec, items in news.items():
         block = [P(sec, H3)]
         if news_take.get(sec):
@@ -636,15 +752,15 @@ def build_pdf(path, weather, nse, glob, gh_data, news, reddit, brief, news_take)
         s.append(KeepTogether(block))
 
     # Reddit
-    s += [PageBreak()] + section("Reddit - what developers are discussing")
+    s += section("Reddit - what developers are discussing", 60)
     rc = reddit_chart(reddit)
     if rc:
         s.append(rc)
     for lang, posts in reddit.items():
         if posts:
-            s.append(P(lang, H3))
-            for p in posts[:3]:
-                s.append(Paragraph("&bull; " + link_markup(p["title"], p["url"]), SMALL))
+            block = [P(lang, H3)] + [Paragraph("&bull; " + link_markup(p["title"], p["url"]), SMALL)
+                                     for p in posts[:3]]
+            s.append(KeepTogether(block))
     if not any(reddit.values()):
         s.append(P("Reddit blocked the request (common from cloud IPs). Try running locally.", SMALL))
 
@@ -694,7 +810,7 @@ def run_agent():
     movers = ", ".join(f"{r['sym']} {fmt_pct(r['pct'])}" for r in nse if r["pct"] is not None)
     context = (f"Weather: {weather['current']['temperature_2m']:.0f}C "
                f"{WMO.get(weather['current']['weather_code'], '')}\n" if weather else "")
-    context += f"NSE movers: {movers or 'no history yet'}\n"
+    context += f"NSE movers: {movers or 'no data'}\n"
     if gh_data:
         context += f"GitHub: {gh_data['total14']} commits in 14 days\n"
     context += "\n".join(f"{k}: " + "; ".join(i["title"] for i in v[:3]) for k, v in news.items())
