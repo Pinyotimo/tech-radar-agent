@@ -48,16 +48,20 @@ GH_PAT = os.environ.get("GH_PAT")  # PAT (read:user, repo) -> includes private a
 
 LOCATION = {"name": "Nairobi", "lat": -1.2921, "lon": 36.8219}
 
-# NSE tickers (mystocks.co.ke codes). Dangote Petroleum Refinery is NOT listed
-# on any exchange yet, so it cannot be priced. Add its ticker here if it lists.
+# NSE tickers as on afx.kwayisi.org/nseke. Dangote Petroleum Refinery is NOT listed on
+# any exchange, so it cannot be priced. Quickmart (QMART) is not in the NSE listing either;
+# it shows n/a and will appear automatically if it ever lists.
 NSE_WATCHLIST = {
     "Co-op Bank": "COOP",
     "Stanbic Holdings": "SBIC",
     "EABL": "EABL",
     "BK Group": "BKG",
-    "Eveready (EGAD)": "EGAD",
+    "Eaagads": "EGAD",          # Eveready East Africa is "EVRD"
     "Quickmart": "QMART",
 }
+NSE_URL = "https://afx.kwayisi.org/nseke"
+HISTORY_START = "2026-11-10"  # ignore stored prices before this (older scraper was inaccurate)
+
 GLOBAL_TECH = {"NVIDIA": "NVDA", "Microsoft": "MSFT", "Apple": "AAPL",
                "Alphabet": "GOOGL", "Amazon": "AMZN", "Meta": "META"}
 
@@ -239,18 +243,34 @@ def get_weather():
 
 
 # ------------------------------------------------------------------ 2. STOCKS
-def get_nse_price(sym: str):
-    """Scrapes mystocks.co.ke. Fragile by nature: verify the regex against the live page."""
-    for url in (f"https://live.mystocks.co.ke/stock={sym}", f"https://live.mystocks.co.ke/m/stock={sym}"):
-        try:
-            res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=8)
-            if res.status_code == 200:
-                m = re.search(r"KES\s*([\d,]+\.?\d*)", res.text)
-                if m:
-                    return float(m.group(1).replace(",", ""))
-        except Exception:
+def _num(s):
+    try:
+        return float(s.replace(",", "").replace("+", "").strip())
+    except Exception:
+        return None
+
+
+def get_nse_table():
+    """One request -> {ticker: (last_close, abs_change)} for every NSE stock.
+    Source: afx.kwayisi.org/nseke (table: Ticker, Name, Volume, Price, Change)."""
+    r = requests.get(NSE_URL, timeout=20, headers={
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"})
+    r.raise_for_status()
+    out = {}
+    for tr in re.findall(r"<tr[^>]*>(.*?)</tr>", r.text, re.S | re.I):
+        cells = [re.sub(r"<[^>]+>", "", c).strip()
+                 for c in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", tr, re.S | re.I)]
+        if len(cells) < 4 or not re.fullmatch(r"[A-Z0-9\-]{2,8}", cells[0]):
             continue
-    return None
+        price = _num(cells[3])
+        chg = _num(cells[4]) if len(cells) > 4 else None
+        if price:
+            out[cells[0]] = (price, chg)
+    print(f"  NSE table: parsed {len(out)} tickers")
+    if len(out) < 10:
+        raise RuntimeError("NSE table parse looks wrong (site layout changed or blocked)")
+    return out
 
 
 def load_history():
@@ -258,7 +278,8 @@ def load_history():
     if HISTORY_CSV.exists():
         with open(HISTORY_CSV, newline="") as f:
             for row in csv.DictReader(f):
-                hist[row["symbol"]][row["date"]] = float(row["price"])
+                if row["date"] >= HISTORY_START:
+                    hist[row["symbol"]][row["date"]] = float(row["price"])
     return hist
 
 
@@ -273,15 +294,19 @@ def save_history(hist):
 
 def collect_nse():
     hist = load_history()
+    table = safe(get_nse_table, {}, "nse table")
     rows = []
     for name, sym in NSE_WATCHLIST.items():
-        price = get_nse_price(sym)
+        price, chg = table.get(sym, (None, None))
         if price is not None:
             hist[sym][TODAY] = price
         series = sorted(hist[sym].items())
-        prev = series[-2][1] if len(series) >= 2 else None
         cur = series[-1][1] if series else None
-        pct = ((cur - prev) / prev * 100) if (cur and prev) else None
+        if price is not None and chg is not None and price - chg > 0:
+            pct = chg / (price - chg) * 100          # last-session change from the source
+        else:
+            prev = series[-2][1] if len(series) >= 2 else None
+            pct = ((cur - prev) / prev * 100) if (cur and prev) else None
         rows.append({"name": name, "sym": sym, "price": cur, "pct": pct,
                      "fresh": price is not None, "series": series})
     save_history(hist)
@@ -293,7 +318,7 @@ def nse_chart(rows):
     for r in rows:
         sub = "no change data yet" if r["pct"] is None else fmt_pct(r["pct"])
         if not r["fresh"]:
-            sub += "  (stale)"
+            sub += "  (stale)" if r["price"] is not None else ""
         cards.append({"label": f"{r['sym']} | {r['name'][:18]}",
                       "value": "n/a" if r["price"] is None else f"KES {r['price']:.2f}",
                       "sub": sub, "ys": [p for _, p in r["series"]],
@@ -567,15 +592,19 @@ def build_pdf(path, weather, nse, glob, gh_data, news, reddit, brief, news_take)
     # Markets
     s += section("Markets")
     if nse:
-        s.append(P("NSE watchlist (KES)", H3))
+        s.append(P("NSE watchlist (KES, last close)", H3))
         rows = [[r["name"], r["sym"], "n/a" if r["price"] is None else f"{r['price']:.2f}", fmt_pct(r["pct"]),
-                 "live" if r["fresh"] else "stale"] for r in nse]
+                 "close" if r["fresh"] else ("stale" if r["price"] is not None else "not found")] for r in nse]
         s.append(data_table(["Company", "Ticker", "Price", "Change", "Data"], rows, [60, 25, 30, 30, 25],
                             trend_col=3, mono_cols=(2,)))
         ch = nse_chart(nse)
         if ch:
             s += [Spacer(1, 6), ch]
-    s.append(P("Dangote Petroleum Refinery is unlisted, so no price is available.", SMALL))
+        missing = [r["sym"] for r in nse if r["price"] is None]
+        note = "Prices are end-of-day closes (not live). Dangote Petroleum Refinery is unlisted, so no price."
+        if missing:
+            note += f" No NSE listing found for: {', '.join(missing)}."
+        s.append(P(note, SMALL))
     if glob:
         s += [P("Global tech giants (USD)", H3),
               data_table(["Company", "Ticker", "Price", "1d", "30d"],
@@ -645,7 +674,7 @@ def send_email(pdf_path, preview):
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as srv:
             srv.login(SENDER_EMAIL, pw)
             srv.sendmail(SENDER_EMAIL, RECIPIENT_EMAIL, msg.as_string())
-        print("Email sent.")
+        print(f"Email sent with attachment {Path(pdf_path).name} ({Path(pdf_path).stat().st_size // 1024} KB).")
     except Exception as e:
         print(f"Email failed: {e}")
 
