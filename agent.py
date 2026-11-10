@@ -6,6 +6,7 @@ import json
 import time
 import smtplib
 from datetime import datetime, timedelta
+from html import unescape
 from html.parser import HTMLParser
 from pathlib import Path
 from collections import Counter, defaultdict
@@ -30,6 +31,8 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image,
                                 CondPageBreak, KeepTogether, HRFlowable)
+
+import report_html
 
 try:
     import yfinance as yf
@@ -69,8 +72,19 @@ DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
 HISTORY_CSV = DATA_DIR / "nse_history.csv"
 REDDIT_CACHE = DATA_DIR / "reddit_cache.json"
+ALERT_STATE = DATA_DIR / "alert_state.json"
 OUT_DIR = Path("output")
 OUT_DIR.mkdir(exist_ok=True)
+
+RUN_MODE = os.environ.get("RUN_MODE", "digest").lower()
+ALERT_MOVE_THRESHOLD = float(os.environ.get("ALERT_MOVE_THRESHOLD", "3"))
+ALERT_KEYWORDS = tuple(
+    keyword.strip().lower()
+    for keyword in os.environ.get("ALERT_KEYWORDS", "AI,cybersecurity,Kenya startup").split(",")
+    if keyword.strip()
+)
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
 NEWS_FEEDS = {
     "Cybersecurity": [
@@ -96,6 +110,11 @@ NEWS_FEEDS = {
 }
 REDDIT_LANGS = {"Rust": "rust", "C#": "csharp", "Java": "java",
                 "Node.js": "node", "Kenya Tech": "KenyaTech"}
+
+# Luma's public "discover" feed for Nairobi (id taken from https://lu.ma/nairobi).
+LUMA_PLACE_ID = "discplace-YSx1DPerjjIyq7M"
+# Funds shown in the MMF section. No yields are shown until a yield collector exists.
+MMF_WATCH = ["Arvocap Money Market Fund", "Mansa-X / Mansa Plus", "OAK Money Market Fund"]
 
 # ------------------------------------------------------------------ LLM
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
@@ -144,8 +163,11 @@ except Exception as _e:
 
 
 # ------------------------------------------------------------------ THEME / CHART HELPERS
-NAVY, BLUE, GREEN, RED, GREY, LIGHT = "#0F172A", "#2563EB", "#10B981", "#EF4444", "#64748B", "#F1F5F9"
-PALETTE = [BLUE, GREEN, "#F59E0B", "#8B5CF6", "#EC4899", "#14B8A6", "#F97316"]
+# Same design tokens as the HTML dashboard (report_html.py).
+NAVY, MIDNIGHT, BLUE, GREEN, RED, GREY, LIGHT = ("#101827", "#172554", "#3B82F6", "#16A34A", "#EF4444",
+                                                 "#64748B", "#F1F5F9")
+PURPLE, TEAL, AMBER = "#8B5CF6", "#14B8A6", "#F59E0B"
+PALETTE = ["#2563EB", "#0D9488", "#7C3AED", "#D97706", "#DB2777"]
 
 plt.rcParams.update({
     "font.family": "DejaVu Sans", "axes.spines.top": False, "axes.spines.right": False,
@@ -329,7 +351,7 @@ def _nse_stockanalysis():
         if len(c) >= 6 and TICKER_RE.fullmatch(c[1]):
             price = _num(c[4])
             if price:
-                out[c[1]] = (price, _num(c[5]))
+                out[c[1]] = (price, _num(c[5]), c[2], None)       # (price, pct, name, volume)
     if len(out) < 10:
         _debug_dump("stockanalysis", html, rows)
     return out
@@ -346,19 +368,23 @@ def _nse_afx():
             chg = _num(c[4]) if len(c) > 4 else None
             if price:
                 pct = chg / (price - chg) * 100 if (chg is not None and price - chg > 0) else None
-                out[c[0]] = (price, pct)
+                out[c[0]] = (price, pct, c[1], _num(c[2]))       # (price, pct, name, volume)
     if len(out) < 10:
         _debug_dump("afx", html, rows)
     return out
 
 
+NSE_SOURCE_NAMES = {"_nse_stockanalysis": "stockanalysis.com", "_nse_afx": "afx.kwayisi.org"}
+
+
 def get_nse_table():
-    """{ticker: (last_close, pct_change|None)} from the first source that works."""
+    """{ticker: (last_close, pct_change|None, company_name, volume|None)} from the first source that works."""
     for fn in (_nse_stockanalysis, _nse_afx):
         try:
             out = fn()
             if len(out) >= 10:
                 print(f"  NSE source {fn.__name__}: {len(out)} tickers")
+                get_nse_table.source = NSE_SOURCE_NAMES[fn.__name__]
                 return out
         except Exception as e:
             print(f"  ! {fn.__name__}: {e}")
@@ -384,12 +410,13 @@ def save_history(hist):
                 wr.writerow([d, sym, p])
 
 
-def collect_nse():
+def collect_nse(table=None):
     hist = load_history()
-    table = safe(get_nse_table, {}, "nse table")
+    if table is None:
+        table = safe(get_nse_table, {}, "nse table")
     rows = []
     for name, sym in NSE_WATCHLIST.items():
-        price, pct_src = table.get(sym, (None, None))
+        price, pct_src, _, volume = table.get(sym, (None, None, None, None))
         if price is not None:
             hist[sym][TODAY] = price
         series = sorted(hist[sym].items())
@@ -399,7 +426,7 @@ def collect_nse():
         else:
             prev = series[-2][1] if len(series) >= 2 else None
             pct = ((cur - prev) / prev * 100) if (cur and prev) else None
-        rows.append({"name": name, "sym": sym, "price": cur, "pct": pct,
+        rows.append({"name": name, "sym": sym, "price": cur, "pct": pct, "volume": volume,
                      "fresh": price is not None, "series": series})
     save_history(hist)
     return rows
@@ -426,9 +453,13 @@ def global_tech():
     out = []
     for name, sym in GLOBAL_TECH.items():
         try:
-            h = yf.Ticker(sym).history(period="1mo")["Close"].dropna()
+            df = yf.Ticker(sym).history(period="1mo").dropna(subset=["Close"])
+            h = df["Close"]
             if len(h) >= 2:
-                out.append({"name": name, "sym": sym, "series": h,
+                ohlc = [(d.strftime("%Y-%m-%d"), float(o), float(hi), float(lo), float(c), float(v))
+                        for d, o, hi, lo, c, v in zip(df.index, df["Open"], df["High"], df["Low"],
+                                                      df["Close"], df["Volume"])]
+                out.append({"name": name, "sym": sym, "series": h, "ohlc": ohlc,
                             "price": float(h.iloc[-1]),
                             "pct": float((h.iloc[-1] / h.iloc[-2] - 1) * 100),
                             "pct30": float((h.iloc[-1] / h.iloc[0] - 1) * 100)})
@@ -449,6 +480,8 @@ def gh(path, params=None):
     h = {"Accept": "application/vnd.github+json", "User-Agent": "TechRadarAgent"}
     if GH_PAT:
         h["Authorization"] = f"Bearer {GH_PAT}"
+    if GH_PAT:
+        h["Authorization"] = "Bearer " + GH_PAT
     r = requests.get(f"https://api.github.com{path}", headers=h, params=params, timeout=15)
     r.raise_for_status()
     return r.json()
@@ -524,6 +557,31 @@ def github_charts(g):
 
 
 # ------------------------------------------------------------------ 4. NEWS + REDDIT
+def _plain(html_text, limit=300):
+    """Feed summaries are HTML; keep the publisher's own text, trimmed at a word boundary."""
+    txt = unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html_text or ""))).strip()
+    txt = re.sub(r"\s*(The post .*? appeared first on .*|Continue reading.*|Read more.*)$", "", txt)
+    if len(txt) > limit:
+        txt = txt[:limit].rsplit(" ", 1)[0].rstrip(",;:") + "…"
+    return txt
+
+
+def _feed_item(e, feed):
+    pub = None
+    stamp = e.get("published_parsed") or e.get("updated_parsed")
+    if stamp:
+        pub = datetime(*stamp[:6], tzinfo=ZoneInfo("UTC")).astimezone(TZ).isoformat()
+    title = e.title.strip()
+    source = (e.get("source") or {}).get("title") or feed.feed.get("title") or ""
+    if source and title.endswith(f" - {source}"):            # Google News appends " - Publisher"
+        title = title[: -len(source) - 3]
+    summary = _plain(e.get("summary"))
+    if summary.lower().startswith(title.lower()[:40]):      # aggregators repeat the headline
+        summary = ""
+    return {"title": title, "url": e.get("link", ""), "source": source.strip(), "published": pub,
+            "summary": summary}
+
+
 def collect_news(per_section=6):
     out = {}
     for section, urls in NEWS_FEEDS.items():
@@ -535,10 +593,58 @@ def collect_news(per_section=6):
                 for e in feed.entries[:5]:
                     if e.get("title") and e.title not in seen:
                         seen.add(e.title)
-                        items.append({"title": e.title, "url": e.get("link", "")})
+                        items.append(_feed_item(e, feed))
             except Exception:
                 continue
+        items.sort(key=lambda i: i["published"] or "", reverse=True)   # newest first
         out[section] = items[:per_section]
+    return out
+
+
+def _luma_event(x):
+    ev, tk = x.get("event") or {}, x.get("ticket_info") or {}
+    geo = ev.get("geo_address_info") or {}
+    price = tk.get("price") or {}
+    price_text = None
+    if price.get("cents") is not None:
+        price_text = f"{price.get('currency', '').upper()} {price['cents'] / 100:,.0f}".strip()
+    hosts = [h.get("name") for h in x.get("hosts") or [] if h.get("name")]
+    return {"name": ev.get("name", "").strip(), "url": f"https://lu.ma/{ev.get('url', '')}",
+            "start": ev.get("start_at"), "end": ev.get("end_at"), "location_type": ev.get("location_type"),
+            "city": geo.get("city"), "area": geo.get("sublocality") or geo.get("address"),
+            "organizer": (x.get("calendar") or {}).get("name") or ", ".join(hosts[:2]),
+            "cover": ev.get("cover_url"), "is_free": tk.get("is_free"), "price_text": price_text,
+            "guests": x.get("guest_count"), "availability": x.get("registration_availability"),
+            "near_capacity": tk.get("is_near_capacity"), "sold_out": tk.get("is_sold_out"),
+            "spots": tk.get("spots_remaining"), "approval": tk.get("require_approval"), "source": "Luma"}
+
+
+def collect_events():
+    """Upcoming Nairobi events from Luma's public discover feed (falls back to the city page's
+    embedded data). Times are converted to Nairobi time. Nothing is inferred beyond what Luma lists."""
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; TechRadarAgent/1.0; personal use)"}
+    entries = []
+    try:
+        r = requests.get("https://api.lu.ma/discover/get-paginated-events", headers=headers, timeout=15,
+                         params={"discover_place_api_id": LUMA_PLACE_ID, "pagination_limit": 50})
+        r.raise_for_status()
+        entries = r.json().get("entries", [])
+    except (requests.RequestException, ValueError) as e:
+        print(f"  ! luma api: {e}")
+    if not entries:
+        html = _http_get("https://lu.ma/nairobi")
+        m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', html, re.S)
+        if m:
+            entries = (json.loads(m.group(1)).get("props", {}).get("pageProps", {})
+                       .get("initialData", {}).get("data", {}).get("events", []))
+    out = []
+    for x in entries:
+        ev = _luma_event(x)
+        for k in ("start", "end"):
+            if ev[k]:
+                ev[k] = datetime.fromisoformat(ev[k].replace("Z", "+00:00")).astimezone(TZ).isoformat()
+        if ev["name"] and ev["start"]:
+            out.append(ev)
     return out
 
 
@@ -607,6 +713,165 @@ def reddit_chart(reddit):
     return fig_to_image(fig)
 
 
+# ------------------------------------------------------------------ 5. ALERTS
+def _load_alert_state():
+    if not ALERT_STATE.exists():
+        return {"last_run": None, "seen": []}
+    try:
+        state = json.loads(ALERT_STATE.read_text(encoding="utf-8"))
+        return {"last_run": state.get("last_run"), "seen": list(state.get("seen", []))[-500:]}
+    except (OSError, ValueError) as e:
+        print(f"  ! alert state could not be read: {e}")
+        return {"last_run": None, "seen": []}
+
+
+def _save_alert_state(state):
+    ALERT_STATE.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
+def _add_alert(alerts, state, alert):
+    if alert["id"] not in state["seen"]:
+        alerts.append(alert)
+
+
+def collect_alerts(state):
+    alerts = []
+    since = (datetime.fromisoformat(state["last_run"]) if state["last_run"]
+             else NOW - timedelta(hours=1))
+
+    if GH_PAT:
+        notifications = safe(
+            lambda: gh("/notifications", {"all": "false", "per_page": 50}),
+            [], "github notifications")
+        for item in notifications:
+            updated = datetime.fromisoformat(item["updated_at"].replace("Z", "+00:00")).astimezone(TZ)
+            if updated <= since or item.get("reason") not in {
+                "mention", "assign", "review_requested", "security_alert"
+            }:
+                continue
+            subject = item.get("subject", {})
+            repo = item.get("repository", {}).get("full_name", "")
+            _add_alert(alerts, state, {
+                "id": f"notification:{item['id']}",
+                "title": f"GitHub {item['reason'].replace('_', ' ')}: {subject.get('title', 'notification')}",
+                "url": f"https://github.com/{repo}",
+            })
+
+    for event in safe(lambda: gh(f"/users/{GITHUB_USER}/events", {"per_page": 100}), [], "github activity"):
+        created = datetime.fromisoformat(event["created_at"].replace("Z", "+00:00")).astimezone(TZ)
+        if created <= since:
+            continue
+        event_type = event.get("type")
+        repo = event.get("repo", {}).get("name", "")
+        payload = event.get("payload", {})
+        if event_type == "ReleaseEvent":
+            release = payload.get("release", {})
+            _add_alert(alerts, state, {
+                "id": f"release:{release.get('id', event['id'])}",
+                "title": f"New release in {repo}: {release.get('name') or release.get('tag_name', 'release')}",
+                "url": release.get("html_url", f"https://github.com/{repo}/releases"),
+            })
+        elif event_type in {"IssuesEvent", "IssueCommentEvent", "PullRequestEvent"}:
+            issue = payload.get("issue") or payload.get("pull_request") or {}
+            _add_alert(alerts, state, {
+                "id": f"github:{event['id']}",
+                "title": f"GitHub activity in {repo}: {issue.get('title', event_type)}",
+                "url": issue.get("html_url", f"https://github.com/{repo}"),
+            })
+        elif event_type == "PushEvent" and repo.lower().startswith(f"{GITHUB_USER.lower()}/"):
+            _add_alert(alerts, state, {
+                "id": f"push:{event['id']}",
+                "title": f"New push to {repo} ({payload.get('size', 1)} commit(s))",
+                "url": f"https://github.com/{repo}/commits/{payload.get('head', '')}",
+            })
+
+    for row in safe(collect_nse, [], "nse alerts"):
+        if row["pct"] is not None and abs(row["pct"]) >= ALERT_MOVE_THRESHOLD:
+            _add_alert(alerts, state, {
+                "id": f"nse:{TODAY}:{row['sym']}:{row['pct']:.2f}",
+                "title": f"NSE move: {row['sym']} {fmt_pct(row['pct'])}",
+                "url": "https://www.nse.co.ke/",
+            })
+    for row in safe(global_tech, [], "global market alerts"):
+        if abs(row["pct"]) >= ALERT_MOVE_THRESHOLD:
+            _add_alert(alerts, state, {
+                "id": f"global:{TODAY}:{row['sym']}:{row['pct']:.2f}",
+                "title": f"Global tech move: {row['sym']} {fmt_pct(row['pct'])}",
+                "url": f"https://finance.yahoo.com/quote/{row['sym']}",
+            })
+
+    news = safe(lambda: collect_news(per_section=10), {}, "keyword news")
+    for section_name, items in news.items():
+        for item in items:
+            if any(k in item["title"].lower() for k in ALERT_KEYWORDS):
+                _add_alert(alerts, state, {
+                    "id": f"news:{item['url']}",
+                    "title": f"{section_name}: {item['title']}",
+                    "url": item["url"],
+                })
+    reddit = safe(collect_reddit, {}, "reddit alerts")
+    for section_name, items in reddit.items():
+        for item in items:
+            if any(k in item["title"].lower() for k in ALERT_KEYWORDS):
+                _add_alert(alerts, state, {
+                    "id": f"reddit:{item['url']}",
+                    "title": f"Reddit {section_name}: {item['title']}",
+                    "url": item["url"],
+                })
+    return alerts
+
+
+def send_alert_email(body):
+    pw = os.environ.get("GMAIL_APP_PASSWORD")
+    if not pw:
+        print("GMAIL_APP_PASSWORD not set - email alert skipped.")
+        return
+    msg = MIMEMultipart()
+    msg["Subject"] = f"TechWatch alert - {TODAY_PRETTY}"
+    msg["From"], msg["To"] = SENDER_EMAIL, RECIPIENT_EMAIL
+    msg.attach(MIMEText(body.replace("\n", "<br>"), "html"))
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as srv:
+            srv.login(SENDER_EMAIL, pw)
+            srv.sendmail(SENDER_EMAIL, RECIPIENT_EMAIL, msg.as_string())
+        print("Alert email sent.")
+    except (OSError, smtplib.SMTPException) as e:
+        print(f"Alert email failed: {e}")
+
+
+def send_telegram(body):
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        print("Telegram credentials not set - Telegram alert skipped.")
+        return
+    try:
+        r = requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+            json={"chat_id": TELEGRAM_CHAT_ID, "text": body[:4000], "disable_web_page_preview": True},
+            timeout=15,
+        )
+        r.raise_for_status()
+        print("Telegram alert sent.")
+    except requests.RequestException as e:
+        print(f"Telegram alert failed: {e}")
+
+
+def run_alerts():
+    state = _load_alert_state()
+    alerts = collect_alerts(state)
+    if alerts:
+        body = "\n".join(
+            [f"TechWatch alerts - {TODAY_PRETTY}", ""] +
+            [f"- {a['title']}\n  {a['url']}" for a in alerts[:20]]
+        )
+        send_alert_email(body)
+        send_telegram(body)
+        state["seen"] = (state["seen"] + [a["id"] for a in alerts])[-500:]
+    else:
+        print("No new alerts.")
+    state["last_run"] = NOW.isoformat()
+    _save_alert_state(state)
+
+
 def takeaways(section, items):
     if not items:
         return ""
@@ -614,6 +879,55 @@ def takeaways(section, items):
     return llm("You are a concise tech analyst. Reply with exactly 3 short bullet lines "
                "(start each with '- ', max 20 words each) on what matters most. No preamble.",
                f"Section: {section}\nHeadlines:\n{heads}", 200)
+
+
+def _json_array(text):
+    m = re.search(r"\[.*\]", text or "", re.S)
+    if not m:
+        return []
+    try:
+        data = json.loads(m.group(0))
+        return data if isinstance(data, list) else []
+    except ValueError:
+        return []
+
+
+def annotate_news(section_name, items):
+    """Adds 'why' (one sentence) and 'impact' (high/medium/low) to each item, in place.
+    Shown in the reports under an 'AI analysis' label, never as fact."""
+    if not items:
+        return
+    listing = "\n".join(f"{i}. {it['title']} | {it.get('summary', '')[:220]}" for i, it in enumerate(items))
+    out = llm("You are a sharp technology and markets analyst briefing a Nairobi software engineer who "
+              "also invests. For each numbered item, explain in ONE sentence (max 28 words) why it matters "
+              "and rate its impact as high, medium or low. Use only the information given; do not add "
+              "facts, figures or names that are not in the item. Reply with ONLY a JSON array like "
+              '[{"i":0,"why":"...","impact":"medium"}].',
+              f"Section: {section_name}\n{listing}", 900)
+    for row in _json_array(out):
+        try:
+            it = items[int(row["i"])]
+        except (KeyError, ValueError, IndexError, TypeError):
+            continue
+        if isinstance(row.get("why"), str):
+            it["why"] = row["why"].strip()
+        if str(row.get("impact", "")).lower() in ("high", "medium", "low"):
+            it["impact"] = row["impact"].lower()
+
+
+def market_commentary(nse, glob, news):
+    facts = [f"{r['sym']} ({r['name']}): ${r['price']:.2f}, 1d {fmt_pct(r['pct'])}, 30d {fmt_pct(r['pct30'])}"
+             for r in glob]
+    facts += [f"NSE {r['sym']} ({r['name']}): KES {r['price']:.2f}, {fmt_pct(r['pct'])}"
+              for r in nse if r["price"] is not None]
+    if not facts:
+        return ""
+    heads = [i["title"] for k in ("Tech Giants", "Fintech") for i in news.get(k, [])]
+    return llm("You are a markets analyst. Write exactly 4 bullet lines ('- ', max 30 words each): best and "
+               "worst performer, what may have influenced moves (ONLY if a headline supports it, otherwise say "
+               "the cause is not visible in today's news), overall sentiment, and one risk or opportunity to "
+               "investigate. Never invent numbers or events. No preamble.",
+               "Market data:\n" + "\n".join(facts) + "\n\nToday's headlines:\n" + "\n".join(heads[:12]), 320)
 
 
 # ------------------------------------------------------------------ 5. PDF BUILD
@@ -685,20 +999,63 @@ def footer(canvas, doc):
     canvas.saveState()
     canvas.setFont(SANS, 7.5)
     canvas.setFillColor(colors.HexColor(GREY))
-    canvas.drawString(15 * mm, 8 * mm, f"Tech Radar - {TODAY_PRETTY} - Powered by {LLM_NAME}")
+    canvas.drawString(15 * mm, 8 * mm, f"TechWatch Daily Intelligence - {TODAY_PRETTY} - AI by {LLM_NAME} - not investment advice")
     canvas.drawRightString(195 * mm, 8 * mm, f"Page {doc.page}")
     canvas.restoreState()
 
 
-def build_pdf(path, weather, nse, glob, gh_data, news, reddit, brief, news_take):
+def bullet(text):
+    return Paragraph(escape(latin(text.lstrip("-*• ").strip())), BUL, bulletText="•")
+
+
+def pill(text, hex_color):
+    return f'<font name="{SANS_B}" size="7" color="{hex_color}">{escape(text.upper())}</font>'
+
+
+def callout(flowables, accent=BLUE, bg="#F5F3FF"):
+    """Tinted box with a coloured left rule (used for AI-labelled and 'not connected' content)."""
+    t = Table([[flowables]], colWidths=[180 * mm])
+    t.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(bg)),
+                           ("LINEBEFORE", (0, 0), (0, -1), 3, colors.HexColor(accent)),
+                           ("LEFTPADDING", (0, 0), (-1, -1), 10), ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                           ("TOPPADDING", (0, 0), (-1, -1), 7), ("BOTTOMPADDING", (0, 0), (-1, -1), 7)]))
+    return t
+
+
+def news_block(it, show_desk=True):
+    col = report_html.DESK_HEX.get(it["desk"], BLUE)
+    flags = []
+    if "breaking" in it["flags"]:
+        flags.append(pill("Breaking", RED))
+    if "high" in it["flags"]:
+        flags.append(pill("High priority", "#B45309"))
+    if "funding" in it["flags"]:
+        flags.append(pill("Funding / M&A", "#B45309"))
+    head = (f'<font name="{SANS_B}" size="7" color="{col}">{escape(it["desk"].upper())}</font>   ' if show_desk else "")
+    head += "   ".join(flags)
+    meta = f'{escape(latin(it.get("source") or ""))} · {escape(report_html.ago(it["dt"], NOW))}'
+    out = [Paragraph(head, SMALL)] if head.strip() else []
+    out.append(Paragraph(f'<font name="{SANS_B}" size="10">{link_markup(it["title"], it.get("url", ""))}</font>', BODY))
+    out.append(Paragraph(meta, SMALL))
+    if it.get("why"):
+        out.append(Paragraph(f'<font color="{PURPLE}"><b>Why it matters (AI):</b></font> {escape(latin(it["why"]))}', BODY))
+    out.append(Spacer(1, 6))
+    return KeepTogether(out)
+
+
+def build_pdf(path, weather, nse, glob, gh_data, news, reddit, brief, news_take, ctx=None, prep=None):
     doc = SimpleDocTemplate(str(path), pagesize=A4, leftMargin=15 * mm, rightMargin=15 * mm,
-                            topMargin=12 * mm, bottomMargin=16 * mm, title="Daily Tech Radar")
-    s = [banner("Daily Tech Radar", f"{TODAY_PRETTY}  |  {LOCATION['name']}  |  Prepared for Steve"), Spacer(1, 8)]
+                            topMargin=12 * mm, bottomMargin=16 * mm, title="TechWatch Daily Intelligence")
+    ctx = ctx or {}
+    prep = prep or {"items": [], "events": [], "ops": []}
+    s = [banner("TechWatch · Daily Intelligence",
+                f"{TODAY_PRETTY}  |  {LOCATION['name']}  |  Generated {NOW.strftime('%H:%M')} EAT"), Spacer(1, 8)]
 
+    # 1. Executive briefing
     if brief:
-        s += section("Today's brief", 40) + [P(l.lstrip("-* ").strip(), BUL) for l in brief.splitlines() if l.strip()]
-
-    # Weather: one compact card
+        s += section("1  Executive briefing", 40)
+        s.append(callout([bullet(l) for l in brief.splitlines() if l.strip()]
+                         + [P(f"AI summary of the data in this report ({LLM_NAME}).", SMALL)], PURPLE))
     if weather:
         c, d = weather["current"], weather["daily"]
         s += [Spacer(1, 6), P(f"{LOCATION['name']} weather - today", H3),
@@ -708,8 +1065,32 @@ def build_pdf(path, weather, nse, glob, gh_data, news, reddit, brief, news_take)
                        ("Rain chance", f"{d['precipitation_probability_max'][0]}%"),
                        ("Wind", f"{c['wind_speed_10m']:.0f} km/h")])]
 
-    # Markets (cards only: they carry price, change and trend)
-    s += section("Markets", 90)
+    # 2. Top stories (ranked)
+    if prep["items"]:
+        s += section("2  Top technology news", 60)
+        s.append(P("Ranked by AI-estimated impact, recency, your alert keywords and Kenyan relevance.", SMALL))
+        s.append(Spacer(1, 4))
+        s += [news_block(it) for it in prep["items"][:6]]
+
+    # 4. Nairobi events
+    s += section("4  Nairobi technology events", 50)
+    if prep["events"]:
+        rows = []
+        for ev in sorted(prep["events"], key=lambda x: (-x["register_now"], x["dt"]))[:12]:
+            price = "Free" if ev.get("is_free") else (ev.get("price_text") or "Paid")
+            reg = "REGISTER SOON" if ev["register_now"] else (ev.get("availability") or "-")
+            rows.append([Paragraph(ev["dt"].strftime("%a %d %b<br/>%H:%M"), SMALL),
+                         Paragraph(link_markup(ev["name"], ev["url"]) + "<br/>"
+                                   + escape(latin(ev.get("organizer") or "")), SMALL),
+                         Paragraph("Online" if ev["online"] else escape(latin(ev.get("area") or ev.get("city") or "Nairobi")), SMALL),
+                         price, Paragraph(f'<font color="{RED if ev["register_now"] else GREY}"><b>{escape(reg)}</b></font>', SMALL)])
+        s.append(data_table(["When", "Event / organizer", "Where", "Price", "Registration"], rows, [22, 80, 32, 20, 26]))
+        s.append(P("Source: Luma public Nairobi feed. Instagram, WhatsApp, LinkedIn and Microsoft Events are not connected yet.", SMALL))
+    else:
+        s.append(P("No upcoming events returned by Luma this run.", SMALL))
+
+    # 7-8. Markets
+    s += section("7-8  Markets", 90)
     if nse:
         ch = nse_chart(nse)
         if ch:
@@ -718,20 +1099,45 @@ def build_pdf(path, weather, nse, glob, gh_data, news, reddit, brief, news_take)
         if len(missing) == len(nse):
             note = "NSE price sources were unreachable for this run."
         else:
-            note = "NSE prices are end-of-day closes (not live)."
+            note = f"NSE prices are end-of-day closes (not live), source: {ctx.get('nse_source', 'NSE table')}."
             if missing:
                 note += f" No NSE listing found for: {', '.join(missing)}."
         note += " Dangote Petroleum Refinery is unlisted, so no price."
         s.append(P(note, SMALL))
+    mk = [r for r in ctx.get("nse_market") or [] if r.get("pct") is not None]
+    if mk:
+        adv = sum(1 for r in mk if r["pct"] > 0)
+        dec = sum(1 for r in mk if r["pct"] < 0)
+        g = sorted([r for r in mk if r["pct"] > 0], key=lambda r: -r["pct"])[:5]
+        l = sorted([r for r in mk if r["pct"] < 0], key=lambda r: r["pct"])[:5]
+        s += [P(f"NSE breadth: {adv} advancing, {dec} declining, {len(ctx['nse_market']) - adv - dec} unchanged or not traded", H3)]
+        rows = []
+        for i in range(max(len(g), len(l))):
+            a_ = g[i] if i < len(g) else None
+            b_ = l[i] if i < len(l) else None
+            rows.append([a_["sym"] if a_ else "", Paragraph(f'<font color="{GREEN}"><b>{fmt_pct(a_["pct"])}</b></font>', BODY) if a_ else "",
+                         b_["sym"] if b_ else "", Paragraph(f'<font color="{RED}"><b>{fmt_pct(b_["pct"])}</b></font>', BODY) if b_ else ""])
+        if rows:
+            s.append(data_table(["Top gainer", "Change", "Top loser", "Change"], rows, [45, 45, 45, 45], mono_cols=(0, 2)))
     if glob:
         gc = global_chart(glob)
         if gc:
             s += [Spacer(1, 8), gc]
+    if ctx.get("market_take"):
+        s += [Spacer(1, 6), callout([P("Daily market analysis (AI interpretation, not investment advice)", H3)]
+                                    + [bullet(l) for l in ctx["market_take"].splitlines() if l.strip()],
+                                    PURPLE)]
 
-    # GitHub
+    # 9-10. Not connected yet
+    s += section("9-10  Dividends, corporate actions and MMFs", 40)
+    s.append(callout([P("Not connected yet. No dividend, book-closure or MMF yield data is collected, so none is "
+                        "shown. These sections fill only from official announcements and published yields and are never "
+                        f"estimated. Funds being watched: {', '.join(MMF_WATCH)}.", BODY)], GREY, LIGHT))
+
+    # GitHub (3. AI & developer)
     if gh_data:
         u = gh_data["user"]
-        s += section(f"GitHub - {GITHUB_USER}", 110) + [
+        s += section(f"3  Developer activity - GitHub {GITHUB_USER}", 110) + [
             kpi_row([("Commits (14d)", gh_data["total14"]), ("Public repos", u["public_repos"]),
                      ("Stars", gh_data["stars"]), ("Followers", u["followers"])]),
             Spacer(1, 6), github_charts(gh_data)]
@@ -741,18 +1147,22 @@ def build_pdf(path, weather, nse, glob, gh_data, news, reddit, brief, news_take)
                              [[w, trunc(r.split("/")[-1], 26), n, trunc(m, 48)] for w, r, n, m in gh_data["pushes"]],
                              [28, 55, 10, 87], mono_cols=(0,))]
 
-    # News
-    s += section("News & Intelligence", 60)
-    for sec, items in news.items():
-        block = [P(sec, H3)]
-        if news_take.get(sec):
-            block += [P(l.lstrip("-* ").strip(), BUL) for l in news_take[sec].splitlines() if l.strip()]
+    # News by desk
+    s += section("News coverage by desk", 60)
+    for sec_name, items in news.items():
+        col = report_html.DESK_HEX.get(sec_name, BLUE)
+        block = [Paragraph(f'<font color="{col}">●</font> {escape(sec_name)}', H3)]
+        if news_take.get(sec_name):
+            block += [bullet(l) for l in news_take[sec_name].splitlines() if l.strip()]
         block.append(Spacer(1, 2))
-        block += [Paragraph("&bull; " + link_markup(i["title"], i["url"]), SMALL) for i in items]
+        for i in items:
+            when = report_html.ago(report_html.parse_dt(i.get("published")), NOW)
+            block.append(Paragraph("&bull; " + link_markup(i["title"], i["url"])
+                                   + f' <font color="{GREY}">· {escape(latin(i.get("source") or ""))} · {when}</font>', SMALL))
         s.append(KeepTogether(block))
 
-    # Reddit
-    s += section("Reddit - what developers are discussing", 60)
+    # 11. Reddit
+    s += section("11  Reddit - community discussion (opinion, not fact)", 60)
     rc = reddit_chart(reddit)
     if rc:
         s.append(rc)
@@ -764,67 +1174,121 @@ def build_pdf(path, weather, nse, glob, gh_data, news, reddit, brief, news_take)
     if not any(reddit.values()):
         s.append(P("Reddit blocked the request (common from cloud IPs). Try running locally.", SMALL))
 
+    # 12. Opportunities
+    if prep["ops"]:
+        s += section("12  Opportunities worth watching", 40)
+        for o in prep["ops"]:
+            s.append(Paragraph(f'<font name="{SANS_B}" color="{PURPLE}">{escape(o["kind"].upper())}</font>  '
+                               + link_markup(o["title"], o["url"] or "") + f'<br/><font color="{GREY}">{escape(latin(o["why"]))}</font>', BUL))
+        s.append(P("Leads built by rules from this report's data, not recommendations.", SMALL))
+
     doc.build(s, onFirstPage=footer, onLaterPages=footer)
 
 
 # ------------------------------------------------------------------ 6. EMAIL
-def send_email(pdf_path, preview):
+def send_email(attachments, html_body):
     pw = os.environ.get("GMAIL_APP_PASSWORD")
     if not pw:
-        print("GMAIL_APP_PASSWORD not set - PDF saved only.")
+        print("GMAIL_APP_PASSWORD not set - reports saved only.")
         return
     msg = MIMEMultipart()
-    msg["Subject"] = f"Daily Tech Radar - {TODAY_PRETTY}"
+    msg["Subject"] = f"TechWatch Daily Intelligence - {TODAY_PRETTY}"
     msg["From"], msg["To"] = SENDER_EMAIL, RECIPIENT_EMAIL
-    html = f"""<div style="font-family:Segoe UI,Arial,sans-serif;max-width:560px">
-      <h2 style="font-family:Georgia,serif;color:#0F172A;border-bottom:3px solid #2563EB;padding-bottom:6px">Daily Tech Radar</h2>
-      <p style="color:#64748B">{escape(TODAY_PRETTY)}</p>
-      <div style="color:#334155;line-height:1.6">{preview}</div>
-      <p style="color:#94A3B8;font-size:12px">Full report with charts attached (PDF).</p></div>"""
-    msg.attach(MIMEText(html, "html"))
-    with open(pdf_path, "rb") as f:
-        part = MIMEApplication(f.read(), _subtype="pdf")
-    part.add_header("Content-Disposition", "attachment", filename=Path(pdf_path).name)
-    msg.attach(part)
+    msg.attach(MIMEText(html_body, "html", "utf-8"))
+    for path, subtype in attachments:
+        with open(path, "rb") as f:
+            data = f.read()
+        part = (MIMEText(data.decode("utf-8"), "html", "utf-8") if subtype == "html"
+                else MIMEApplication(data, _subtype=subtype))
+        part.add_header("Content-Disposition", "attachment", filename=Path(path).name)
+        msg.attach(part)
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as srv:
             srv.login(SENDER_EMAIL, pw)
             srv.sendmail(SENDER_EMAIL, RECIPIENT_EMAIL, msg.as_string())
-        print(f"Email sent with attachment {Path(pdf_path).name} ({Path(pdf_path).stat().st_size // 1024} KB).")
+        print("Email sent with " + ", ".join(f"{Path(p).name} ({Path(p).stat().st_size // 1024} KB)"
+                                            for p, _ in attachments) + ".")
     except Exception as e:
         print(f"Email failed: {e}")
 
 
 # ------------------------------------------------------------------ 7. ORCHESTRATOR
+def _status(name, value, ok_detail, fail_detail):
+    return {"name": name, "ok": bool(value), "detail": ok_detail if value else fail_detail}
+
+
 def run_agent():
     print(f"Agent started - {LLM_NAME}")
     weather = safe(get_weather, None, "weather")
-    nse = safe(collect_nse, [], "nse")
+    nse_table = safe(get_nse_table, {}, "nse table")
+    nse = safe(lambda: collect_nse(nse_table), [], "nse")
     glob = safe(global_tech, [], "global tech")
     gh_data = safe(collect_github, None, "github")
     news = safe(collect_news, {}, "news")
     reddit = safe(collect_reddit, {}, "reddit")
+    events = safe(collect_events, [], "luma events")
 
     news_take = {sec: takeaways(sec, items) for sec, items in news.items()}
+    for sec, items in news.items():
+        annotate_news(sec, items)
+    market_take = market_commentary(nse, glob, news)
 
     movers = ", ".join(f"{r['sym']} {fmt_pct(r['pct'])}" for r in nse if r["pct"] is not None)
     context = (f"Weather: {weather['current']['temperature_2m']:.0f}C "
                f"{WMO.get(weather['current']['weather_code'], '')}\n" if weather else "")
     context += f"NSE movers: {movers or 'no data'}\n"
+    if glob:
+        context += "US big tech 1d: " + ", ".join(f"{r['sym']} {fmt_pct(r['pct'])}" for r in glob) + "\n"
+    if events:
+        context += "Nairobi events (Luma): " + "; ".join(
+            f"{e['name']} on {e['start'][:10]}" for e in events[:5]) + "\n"
     if gh_data:
         context += f"GitHub: {gh_data['total14']} commits in 14 days\n"
     context += "\n".join(f"{k}: " + "; ".join(i["title"] for i in v[:3]) for k, v in news.items())
-    brief = llm("Write a morning brief for a Nairobi software engineer: exactly 4 bullet lines ('- '), "
-                "max 22 words each, most important first. No preamble.", context, 250)
+    brief = llm("Write a morning executive brief for a Nairobi software engineer who also invests: exactly 5 "
+                "bullet lines ('- '), max 26 words each, most important first. Cover the biggest tech story, "
+                "markets, and any event worth attending. Use only the facts provided; never invent numbers. "
+                "No preamble.", context, 320)
+
+    nse_source = getattr(get_nse_table, "source", None)
+    ctx = {
+        "now": NOW, "llm_name": LLM_NAME, "location": LOCATION["name"], "weather": weather, "wmo": WMO,
+        "nse": nse, "glob": glob, "gh": gh_data, "github_user": GITHUB_USER, "news": news,
+        "news_take": news_take, "reddit": reddit, "reddit_subs": REDDIT_LANGS, "brief": brief,
+        "market_take": market_take, "events": events, "keywords": ALERT_KEYWORDS,
+        "move_threshold": ALERT_MOVE_THRESHOLD, "mmf_watch": MMF_WATCH, "nse_source": nse_source,
+        "nse_market": [{"sym": k, "price": v[0], "pct": v[1], "name": v[2], "volume": v[3]}
+                       for k, v in nse_table.items()],
+        "feed_sources": sorted({i["source"] for v in news.values() for i in v if i.get("source")}),
+        "status": [
+            _status("NSE prices", nse_table, f"{nse_source}: {len(nse_table)} counters", "all NSE sources failed"),
+            _status("US big tech", glob, f"Yahoo Finance: {len(glob)} stocks", "yfinance unavailable"),
+            _status("Tech news (RSS)", news and any(news.values()),
+                    f"{sum(len(v) for v in news.values())} stories from {len(news)} desks", "all feeds failed"),
+            _status("Nairobi events (Luma)", events, f"{len(events)} upcoming events", "Luma unavailable"),
+            _status("Reddit", reddit and any(reddit.values()), f"{sum(len(v) for v in reddit.values())} posts",
+                    "blocked / no posts"),
+            _status("GitHub", gh_data, "activity, repos and commits", "GitHub API unavailable"),
+            _status("Weather", weather, "Open-Meteo", "Open-Meteo unavailable"),
+            _status("AI analysis", brief, LLM_NAME, f"{LLM_NAME} unavailable - reports show data only"),
+            {"name": "Dividends & corporate actions", "ok": None, "detail": "not connected"},
+            {"name": "MMF yields", "ok": None, "detail": "not connected"},
+            {"name": "Instagram / WhatsApp / LinkedIn events", "ok": None, "detail": "not connected"},
+        ],
+    }
+    prep = report_html.prepare(ctx)
+
+    html_path = OUT_DIR / f"techwatch-{TODAY}.html"
+    html_path.write_text(report_html.render_dashboard(ctx), encoding="utf-8")
+    (OUT_DIR / "index.html").write_text(html_path.read_text(encoding="utf-8"), encoding="utf-8")
+    print(f"Dashboard built: {html_path}")
 
     pdf_path = OUT_DIR / f"tech-radar-{TODAY}.pdf"
-    build_pdf(pdf_path, weather, nse, glob, gh_data, news, reddit, brief, news_take)
+    build_pdf(pdf_path, weather, nse, glob, gh_data, news, reddit, brief, news_take, ctx, prep)
     print(f"PDF built: {pdf_path}")
 
-    preview = "<br>".join("&bull; " + escape(l.lstrip("-* ").strip()) for l in brief.splitlines() if l.strip()) \
-        or "Your daily report is attached."
-    send_email(pdf_path, preview)
+    send_email([(html_path, "html"), (pdf_path, "pdf")], report_html.render_email(ctx))
 
 
 if __name__ == "__main__":
-    run_agent()
+    run_alerts() if RUN_MODE == "alerts" else run_agent()

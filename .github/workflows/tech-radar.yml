@@ -4,6 +4,7 @@ on:
     - cron: "7 3 * * *"     # 06:07 Nairobi
     - cron: "23 7 * * *"    # 10:23 Nairobi
     - cron: "17 18 * * *"   # 21:17 Nairobi
+    - cron: "*/30 * * * *"  # event alerts
   workflow_dispatch:
 permissions:
   contents: write
@@ -12,6 +13,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   run:
+    if: github.event_name != 'schedule' || github.event.schedule != '*/30 * * * *'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -24,9 +26,35 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           GH_PAT: ${{ secrets.GH_PAT }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       - name: Persist data
         run: |
           git config user.name "tech-radar-bot"
           git config user.email "bot@users.noreply.github.com"
           git add data/
           git diff --cached --quiet || (git commit -m "chore: update data" && git pull --rebase && git push)
+  alerts:
+    if: github.event_name == 'schedule' && (github.event.schedule == '*/30 * * * *')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - run: python agent.py
+        env:
+          RUN_MODE: alerts
+          GH_PAT: ${{ secrets.GH_PAT }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ALERT_MOVE_THRESHOLD: "3"
+          ALERT_KEYWORDS: "AI,cybersecurity,Kenya startup"
+      - name: Persist alert state
+        run: |
+          git config user.name "tech-radar-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add data/alert_state.json data/reddit_cache.json
+          git diff --cached --quiet || (git commit -m "chore: update alert state" && git pull --rebase && git push)

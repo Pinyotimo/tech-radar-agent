@@ -29,6 +29,15 @@ scan through their feed and identify key trends and insights.
 6. **Machine Learning and Predictions:** TechWatch uses machine learning algorithms to analyze user behavior and preferences,
 making predictions about upcoming tech trends and opportunities.
 
+**Automation:**
+
+- GitHub Actions generates the regular digest three times daily in Africa/Nairobi time.
+- A separate alert run executes every 30 minutes and deduplicates GitHub activity, releases, security notifications,
+  3%+ watchlist moves, and keyword-matching news or Reddit posts in `data/alert_state.json`.
+- Configure `GROQ_API_KEY`, `GMAIL_APP_PASSWORD`, `GH_PAT`, `TELEGRAM_BOT_TOKEN`, and `TELEGRAM_CHAT_ID`
+  as repository secrets for unattended delivery.
+- Change alert keywords and the market threshold with `ALERT_KEYWORDS` and `ALERT_MOVE_THRESHOLD`.
+
 **Key Benefits:**
 
 1. **Stay informed:** TechWatch provides users with a comprehensive feed of tech news, updates, and trends, ensuring they stay
