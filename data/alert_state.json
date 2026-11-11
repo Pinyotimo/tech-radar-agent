@@ -1,5 +1,5 @@
 {
-  "last_run": "2026-11-11T12:43:32.694763+03:00",
+  "last_run": "2026-11-11T20:41:55.142844+03:00",
   "seen": [
     "global:2026-11-11:NVDA:-5.47",
     "global:2026-11-11:META:5.12",
@@ -26,6 +26,20 @@
     "reddit:https://www.reddit.com/r/csharp/comments/1xsqnde/mimekit_and_mailkit_50_released_dmarc_simd/",
     "news:https://thehackernews.com/2026/11/railway-says-stolen-customer-ai-keys.html",
     "news:https://thehackernews.com/2026/11/microsoft-researchers-show-ai-agents.html",
-    "news:https://thehackernews.com/2026/11/cisco-broadworks-and-openwave-flaws.html"
+    "news:https://thehackernews.com/2026/11/cisco-broadworks-and-openwave-flaws.html",
+    "global:2026-11-11:NVDA:4.66",
+    "news:https://thehackernews.com/2026/11/antifox-ai-pentesting-platform-linked.html",
+    "news:https://www.bleepingcomputer.com/news/security/hackers-use-antifox-ai-agents-in-aws-credential-theft-attacks/",
+    "news:https://www.cncf.io/announcements/2026/11/11/meta-wins-cncf-end-user-case-study-contest-for-accelerating-ai-infrastructure-deployments-from-hours-to-minutes/",
+    "news:https://www.finextra.com/newsarticle/48744/alta-raises-475m-to-build-blockchain-infrastructure-for-financial-institutions?utm_medium=rssfinextra&utm_source=finextrafeed",
+    "news:https://www.finextra.com/newsarticle/48740/deutsche-bank-and-ant-set-out-roadmap-for-integrating-agentic-ai-into-wholesale-banking?utm_medium=rssfinextra&utm_source=finextrafeed",
+    "news:https://techcrunch.com/2026/11/11/openais-quarterly-revenue-reportedly-crosses-10b-for-the-first-time/",
+    "news:https://www.theverge.com/tech/1031526/google-tabletop-ai-experiment-waitlist-availability",
+    "news:https://techcrunch.com/2026/11/11/databricks-new-ai-agent-tells-ceo-ali-ghodsi-the-unvarnished-truth/",
+    "news:https://techcrunch.com/2026/11/11/plurai-wants-to-help-ai-agents-work-better-using-the-same-approach-that-helped-get-self-driving-cars-to-roads/",
+    "news:https://news.google.com/rss/articles/CBMiwgFBVV95cUxORnpBQ3kxeFJuclM2TU5ZazlxdkRoSFAyTVZZdXF3TWdjbVFNT2s0NU11TmttdmdIV1BIeWo2SDlxWjlrQVdQMm9XNU83RUtvYzJjR1BOYkplMUw2eFQzUmJ1M3YzM3R4M3RaOHNKazUzRE9qQ1BUZ0ttYld2c0wtMnRNWGF4OU1NS1RrZEdTRVpkUWxZcE8yTzUxRXZaX05ncDdDRURrNnc5N0ZPMjd1aFZVdGU0S1oySF9KRUdOenVCZw?oc=5",
+    "news:https://news.google.com/rss/articles/CBMi1wFBVV95cUxPUmRvWU9fbEt1bUpVTzRNN3NTc1ZUZ3ZFdmk0SUJJLWxNYTIwSEJQMENvMVpfLWlfSmdUSHpNZU1vcERKV1JlaHRuQW1iTDdlX1loTXh6U0dlS3ExU20yWk5nYTNjTk1qUFJRYU5kUTh5R25jTVFrQkpya3BlcE81LUZEZzJzenVQcm1acmpPTDJYUkdYYUstQy1LUjExLU9jcDNmbGRYME5nY0l0WVVnMmtQSldxSTdHTDUwRXd4U1pXNFlkZlE0YmRhX1J4X0loRVRXMjVwZw?oc=5",
+    "news:https://news.google.com/rss/articles/CBMi3gFBVV95cUxOLVdBMm5hc0ZJNlkxaXFILS1TVmlKaEtjcG9ZUFJxOXNGMG43VEU2Z3V1cHkyeWg5eWtDOWNnVjJ3dW5VSFRqemViZE0wNVF5RG0xdG4xV0lYdC1TYzBTcHlNaVZmUFk1LU1lQlM2Y1B3N2RYdUgwZnh5RmZQRUdWeGtVYU1VcndZUWxVeFo3MmNobGxIQmN3Z041d2lTbWxhQUZZS09SWEhoems4cktRQnAxSmI5alE3SFQ4RDlwMDItanZNZDdEZ0o2TEJha3JoZi1UNkwzQ1pQUTlIZkE?oc=5",
+    "reddit:https://www.reddit.com/r/csharp/comments/1xt3woo/cake_v700_released_net_11_c_15_unified_di_across/"
   ]
 }
