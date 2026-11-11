@@ -1,5 +1,5 @@
 {
-  "last_run": "2026-11-11T05:08:45.192543+03:00",
+  "last_run": "2026-11-11T12:43:32.694763+03:00",
   "seen": [
     "global:2026-11-11:NVDA:-5.47",
     "global:2026-11-11:META:5.12",
@@ -23,6 +23,9 @@
     "news:https://news.google.com/rss/articles/CBMiuAFBVV95cUxOSTZrX0pvV1ItM2dhS2szNFY0WjZaNV9id2MxbkpYS1EwRjhiQlNONDFHQUJVWnI4ek1UVHJLYldVWHJtTUdsZVhQemxFVEtneTFqbzc3OFFNMmhCODk1U1o3UUhFb3VnOEt6T0NLbHB1eXUxOVIwRGJuN3NuUEl0V1oySUdkU190Sk9HLWgwaGhlOWozbThEOXRZUFMtRnZ4M2JOXzdlNW92dnZONVQ5WWlEcDFOVXJN?oc=5",
     "news:https://news.google.com/rss/articles/CBMiwwFBVV95cUxOZHp3aXFHam9zMzdMdG5JT3dhLXJQMVRtWnF5aUJUdXM2aVFBYjA3ZjdmMDVUSldweGs5aU9tYVBvSHNDU1NQSmdDWUs4VUM0VjRrLWJ4TnEzQXJWY3YtZGVSSGJYYVl3OHJUWVJqRDI3aHJuWjFOR292V1MwWHRjb0hkN05XdVU0cnRrOURvbVFHRlV5NkhyTlVyOTV4NEo3ckpMQjNTS005V1NUYUx4ZnM4WkVXOExfTXlmTnNLTjJyTVk?oc=5",
     "news:https://news.google.com/rss/articles/CBMi3wFBVV95cUxNc0lhRTVSbW5zOVBncVpHR2FxV3VVcG9aeVdRMlBqZEwzMUpidE9CZTFHWDE3ai11UmRzMkFjaTFZYTJfb3RWUmZOUWNCVGRwQzUzcmY1Uk5ILXlucEFwSHA4eFpxVnhET3I5QXZobFM1ZkxUZlFOY01oZWc1UmFuQW41QU1VQUxORW1iS2pydHlMaTFhNVlNZFZfVWs3RjFYbUo0aGkyRHluRmNtM0JiazlVX016Q0hxaUxGN0Fnb1V6SWxLemRVYXFMZEt4MHI5X09SSm9IQU1ZZ1VmRzc0?oc=5",
-    "reddit:https://www.reddit.com/r/csharp/comments/1xsqnde/mimekit_and_mailkit_50_released_dmarc_simd/"
+    "reddit:https://www.reddit.com/r/csharp/comments/1xsqnde/mimekit_and_mailkit_50_released_dmarc_simd/",
+    "news:https://thehackernews.com/2026/11/railway-says-stolen-customer-ai-keys.html",
+    "news:https://thehackernews.com/2026/11/microsoft-researchers-show-ai-agents.html",
+    "news:https://thehackernews.com/2026/11/cisco-broadworks-and-openwave-flaws.html"
   ]
 }
