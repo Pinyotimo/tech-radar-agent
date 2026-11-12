@@ -120,7 +120,8 @@ MMF_WATCH = ["Arvocap Money Market Fund", "Mansa-X / Mansa Plus", "OAK Money Mar
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 if GROQ_API_KEY:
     client = OpenAI(base_url="https://api.groq.com/openai/v1", api_key=GROQ_API_KEY)
-    MODEL_NAME, LLM_NAME = "llama-3.3-70b-versatile", "Groq Llama 3.3 70B"
+    MODEL_NAME = os.environ.get("GROQ_MODEL", "llama-3.1-8b-instant")
+    LLM_NAME = f"Groq ({MODEL_NAME})"
 else:
     client = OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
     MODEL_NAME, LLM_NAME = "llama3.2", "Ollama Llama 3.2 (local)"

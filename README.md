@@ -36,6 +36,7 @@ making predictions about upcoming tech trends and opportunities.
   3%+ watchlist moves, and keyword-matching news or Reddit posts in `data/alert_state.json`.
 - Configure `GROQ_API_KEY`, `GMAIL_APP_PASSWORD`, `GH_PAT`, `TELEGRAM_BOT_TOKEN`, and `TELEGRAM_CHAT_ID`
   as repository secrets for unattended delivery.
+- Groq uses `llama-3.1-8b-instant` by default; set `GROQ_MODEL` to another currently available Groq model if needed.
 - Change alert keywords and the market threshold with `ALERT_KEYWORDS` and `ALERT_MOVE_THRESHOLD`.
 - If NSE sources are temporarily unavailable, the report keeps the last stored NSE prices and labels them stale
   instead of replacing the watchlist with `N/A`.
