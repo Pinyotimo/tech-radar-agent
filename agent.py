@@ -422,7 +422,9 @@ def save_history(hist):
 
 
 def collect_nse(table=None):
-    hist = load_history()
+    # Preserve all collected dates so the watchlist trend can grow across runs.
+    # The source parser already rejects malformed/currently unusable data.
+    hist = load_history(since=None)
     if table is None:
         table = safe(get_nse_table, {}, "nse table")
     if not table:
@@ -1271,6 +1273,8 @@ def run_agent():
                 "No preamble.", context, 320)
 
     nse_source = getattr(get_nse_table, "source", None)
+    if not nse_source and any(row["price"] is not None for row in nse):
+        nse_source = "stored history (stale)"
     ctx = {
         "now": NOW, "llm_name": LLM_NAME, "location": LOCATION["name"], "weather": weather, "wmo": WMO,
         "nse": nse, "glob": glob, "gh": gh_data, "github_user": GITHUB_USER, "news": news,
@@ -1281,7 +1285,9 @@ def run_agent():
                        for k, v in nse_table.items()],
         "feed_sources": sorted({i["source"] for v in news.values() for i in v if i.get("source")}),
         "status": [
-            _status("NSE prices", nse_table, f"{nse_source}: {len(nse_table)} counters", "all NSE sources failed"),
+            _status("NSE prices", any(row["price"] is not None for row in nse),
+                    f"{nse_source}: {sum(row['price'] is not None for row in nse)} watchlist counters",
+                    "all NSE sources failed and no stored history"),
             _status("US big tech", glob, f"Yahoo Finance: {len(glob)} stocks", "yfinance unavailable"),
             _status("Tech news (RSS)", news and any(news.values()),
                     f"{sum(len(v) for v in news.values())} stories from {len(news)} desks", "all feeds failed"),
