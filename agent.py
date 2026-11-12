@@ -326,12 +326,21 @@ def _num(s):
 
 
 def _http_get(url):
-    r = requests.get(url, timeout=20, headers={
+    headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml", "Accept-Language": "en-US,en;q=0.9"})
-    r.raise_for_status()
-    return r.text
+        "Accept": "text/html,application/xhtml+xml", "Accept-Language": "en-US,en;q=0.9"}
+    last_error = None
+    for attempt in range(3):
+        try:
+            r = requests.get(url, timeout=20, headers=headers)
+            r.raise_for_status()
+            return r.text
+        except requests.RequestException as e:
+            last_error = e
+            if attempt < 2:
+                time.sleep(2 ** attempt)
+    raise RuntimeError(f"request failed after 3 attempts: {url}") from last_error
 
 
 def _debug_dump(name, html, rows):
@@ -436,7 +445,10 @@ def collect_nse(table=None):
             pct = ((cur - prev) / prev * 100) if (cur and prev) else None
         rows.append({"name": name, "sym": sym, "price": cur, "pct": pct, "volume": volume,
                      "fresh": price is not None, "series": series})
-    save_history(hist)
+    if table or hist:
+        save_history(hist)
+    else:
+        print("  ! No NSE data or history available; preserving existing history file")
     return rows
 
 
