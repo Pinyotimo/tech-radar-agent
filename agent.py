@@ -422,32 +422,62 @@ def save_history(hist):
                 wr.writerow([d, sym, p])
 
 
+NSE_TREND_DAYS = 30
+CHART_POINT_RE = re.compile(r'd\("(\d{4}-\d{2}-\d{2})"\),\s*([0-9.]+)\]')
+
+
+def _nse_daily_closes(sym, days=NSE_TREND_DAYS):
+    """Past daily closes {date: price} for one NSE ticker from afx.kwayisi.org's chart feed."""
+    js = _http_get(f"https://afx.kwayisi.org/chart/nse/{sym.lower()}")
+    since = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    return {d: float(p) for d, p in CHART_POINT_RE.findall(js) if d >= since and float(p) > 0}
+
+
+def backfill_history(hist, days=NSE_TREND_DAYS, min_points=10):
+    """Fill missing past closes so sparklines show a real trend instead of a single point."""
+    since = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    for sym in NSE_WATCHLIST.values():
+        if sum(1 for d in hist[sym] if d >= since) >= min_points:
+            continue
+        try:
+            closes = _nse_daily_closes(sym, days)
+        except Exception as e:
+            print(f"  ! NSE backfill {sym}: {e}")
+            continue
+        for d, p in closes.items():
+            hist[sym].setdefault(d, p)   # never overwrite prices we already stored
+        if closes:
+            print(f"  NSE backfill {sym}: {len(closes)} daily closes")
+
+
 def collect_nse(table=None):
     # Preserve all collected dates so the watchlist trend can grow across runs.
     # The source parser already rejects malformed/currently unusable data.
     hist = load_history(since=None)
+    backfill_history(hist)
     if table is None:
         table = safe(get_nse_table, {}, "nse table")
     if not table:
         # Keep showing the last known counters during a temporary runner/source outage.
         # The rows are marked stale below; legacy prices are only used when no current
         # table was collected, so the normal HISTORY_START accuracy guard remains intact.
-        hist = load_history(since=None)
         print("  ! NSE sources unavailable; using stored prices as stale fallback")
     rows = []
     for name, sym in NSE_WATCHLIST.items():
         price, pct_src, _, volume = table.get(sym, (None, None, None, None))
         if price is not None:
             hist[sym][TODAY] = price
-        series = sorted(hist[sym].items())
+        since = (datetime.now() - timedelta(days=NSE_TREND_DAYS)).strftime("%Y-%m-%d")
+        series = [(d, p) for d, p in sorted(hist[sym].items()) if d >= since]
         cur = series[-1][1] if series else None
+        pct30 = ((cur / series[0][1] - 1) * 100) if len(series) >= 2 and series[0][1] else None
         if pct_src is not None:
             pct = pct_src                              # last-session change from the source
         else:
             prev = series[-2][1] if len(series) >= 2 else None
             pct = ((cur - prev) / prev * 100) if (cur and prev) else None
         rows.append({"name": name, "sym": sym, "price": cur, "pct": pct, "volume": volume,
-                     "fresh": price is not None, "series": series})
+                     "pct30": pct30, "fresh": price is not None, "series": series})
     if table or hist:
         save_history(hist)
     else:
@@ -461,13 +491,16 @@ def nse_chart(rows):
         if r["price"] is None:
             subs = [("not found on NSE", None)]
         else:
-            subs = [(fmt_pct(r["pct"]) + ("" if r["fresh"] else "  (stale)"),
+            subs = [("1d " + fmt_pct(r["pct"]) + ("" if r["fresh"] else " (stale)"),
                      None if r["pct"] is None else r["pct"] >= 0)]
+            if r.get("pct30") is not None:
+                subs.append((f"30d {fmt_pct(r['pct30'])}", r["pct30"] >= 0))
         cards.append({"label": f"{r['sym']} | {r['name'][:18]}",
                       "value": "n/a" if r["price"] is None else f"KES {r['price']:.2f}",
                       "subs": subs, "ys": [p for _, p in r["series"]],
-                      "up": None if r["pct"] is None else r["pct"] >= 0})
-    return sparkline_grid(cards, "NSE watchlist - last close and trend")
+                      "up": (r["pct30"] >= 0) if r.get("pct30") is not None
+                            else None if r["pct"] is None else r["pct"] >= 0})
+    return sparkline_grid(cards, "NSE watchlist - last close and 30-day trend")
 
 
 def global_tech():
