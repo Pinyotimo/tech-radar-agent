@@ -37,6 +37,8 @@ making predictions about upcoming tech trends and opportunities.
 - Configure `GROQ_API_KEY`, `GMAIL_APP_PASSWORD`, `GH_PAT`, `TELEGRAM_BOT_TOKEN`, and `TELEGRAM_CHAT_ID`
   as repository secrets for unattended delivery.
 - Change alert keywords and the market threshold with `ALERT_KEYWORDS` and `ALERT_MOVE_THRESHOLD`.
+- If NSE sources are temporarily unavailable, the report keeps the last stored NSE prices and labels them stale
+  instead of replacing the watchlist with `N/A`.
 
 **Key Benefits:**
 

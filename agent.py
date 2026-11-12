@@ -382,21 +382,23 @@ def get_nse_table():
     for fn in (_nse_stockanalysis, _nse_afx):
         try:
             out = fn()
-            if len(out) >= 10:
-                print(f"  NSE source {fn.__name__}: {len(out)} tickers")
+            watch_hits = sum(1 for sym in NSE_WATCHLIST.values() if out.get(sym, (None,))[0] is not None)
+            if len(out) >= 10 and watch_hits:
+                print(f"  NSE source {fn.__name__}: {len(out)} tickers, {watch_hits} watchlist matches")
                 get_nse_table.source = NSE_SOURCE_NAMES[fn.__name__]
                 return out
+            print(f"  ! {fn.__name__}: unusable table ({len(out)} tickers, {watch_hits} watchlist matches)")
         except Exception as e:
             print(f"  ! {fn.__name__}: {e}")
     raise RuntimeError("all NSE sources failed")
 
 
-def load_history():
+def load_history(since=HISTORY_START):
     hist = defaultdict(dict)  # sym -> {date: price}
     if HISTORY_CSV.exists():
         with open(HISTORY_CSV, newline="") as f:
             for row in csv.DictReader(f):
-                if row["date"] >= HISTORY_START:
+                if since is None or row["date"] >= since:
                     hist[row["symbol"]][row["date"]] = float(row["price"])
     return hist
 
@@ -414,6 +416,12 @@ def collect_nse(table=None):
     hist = load_history()
     if table is None:
         table = safe(get_nse_table, {}, "nse table")
+    if not table:
+        # Keep showing the last known counters during a temporary runner/source outage.
+        # The rows are marked stale below; legacy prices are only used when no current
+        # table was collected, so the normal HISTORY_START accuracy guard remains intact.
+        hist = load_history(since=None)
+        print("  ! NSE sources unavailable; using stored prices as stale fallback")
     rows = []
     for name, sym in NSE_WATCHLIST.items():
         price, pct_src, _, volume = table.get(sym, (None, None, None, None))
