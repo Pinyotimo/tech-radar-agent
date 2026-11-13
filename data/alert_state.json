@@ -1,5 +1,5 @@
 {
-  "last_run": "2026-11-13T14:23:28.042863+03:00",
+  "last_run": "2026-11-13T21:39:24.997074+03:00",
   "seen": [
     "global:2026-11-11:NVDA:-5.47",
     "global:2026-11-11:META:5.12",
@@ -58,6 +58,12 @@
     "news:https://www.finextra.com/newsarticle/48753/mexicos-clara-raises-65m-for-spend-management-platform?utm_medium=rssfinextra&utm_source=finextrafeed",
     "news:https://techcrunch.com/2026/11/12/jensen-huang-was-having-a-third-affair-reuters-reports/",
     "news:https://www.bleepingcomputer.com/news/microsoft/microsoft-confirms-windows-activation-failures-after-november-updates/",
-    "reddit:https://www.reddit.com/r/node/comments/1xv1no6/i_built_dakly_a_free_zerosetup_transactional/"
+    "reddit:https://www.reddit.com/r/node/comments/1xv1no6/i_built_dakly_a_free_zerosetup_transactional/",
+    "news:https://www.bleepingcomputer.com/news/security/how-one-ai-agent-exposed-five-critical-enterprise-security-gaps/",
+    "news:https://thehackernews.com/2026/11/when-ai-agent-goes-wrong-can-you-stop-it.html",
+    "news:https://techcrunch.com/2026/11/13/export-banned-nvidia-chips-are-behind-chinas-most-powerful-ai-models-uh-oh-jensen/",
+    "news:https://www.theverge.com/tech/1033026/camp-snap-retro-digital-video-campcorder-cs-8-micro-keychain",
+    "news:https://techcrunch.com/2026/11/13/chatgpts-new-wallet-lets-ai-agents-shop-and-check-out-for-you/",
+    "reddit:https://www.reddit.com/r/java/comments/1xv8xj0/rainbow_gum_logging_released_v100_and_why_you/"
   ]
 }
