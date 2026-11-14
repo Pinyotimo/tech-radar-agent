@@ -1,5 +1,5 @@
 {
-  "last_run": "2026-11-13T21:39:24.997074+03:00",
+  "last_run": "2026-11-14T03:09:29.787368+03:00",
   "seen": [
     "global:2026-11-11:NVDA:-5.47",
     "global:2026-11-11:META:5.12",
@@ -64,6 +64,11 @@
     "news:https://techcrunch.com/2026/11/13/export-banned-nvidia-chips-are-behind-chinas-most-powerful-ai-models-uh-oh-jensen/",
     "news:https://www.theverge.com/tech/1033026/camp-snap-retro-digital-video-campcorder-cs-8-micro-keychain",
     "news:https://techcrunch.com/2026/11/13/chatgpts-new-wallet-lets-ai-agents-shop-and-check-out-for-you/",
-    "reddit:https://www.reddit.com/r/java/comments/1xv8xj0/rainbow_gum_logging_released_v100_and_why_you/"
+    "reddit:https://www.reddit.com/r/java/comments/1xv8xj0/rainbow_gum_logging_released_v100_and_why_you/",
+    "nse:2026-11-14:COOP:5.94",
+    "news:https://www.finextra.com/newsarticle/48759/openai-launches-chatgpt-wallet?utm_medium=rssfinextra&utm_source=finextrafeed",
+    "news:https://techcrunch.com/2026/11/13/jensen-huangs-departure-blasts-big-hole-in-ai-startup-funding-vcs-and-founders-say/",
+    "news:https://www.theverge.com/ai-artificial-intelligence/1033425/openai-chatgpt-wallet",
+    "news:https://techcrunch.com/2026/11/13/ai-agent-startup-langchain-hits-3b-valuation/"
   ]
 }
