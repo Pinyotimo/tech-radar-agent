@@ -1,5 +1,5 @@
 {
-  "last_run": "2026-11-14T16:56:30.953408+03:00",
+  "last_run": "2026-11-14T21:57:50.372142+03:00",
   "seen": [
     "global:2026-11-11:NVDA:-5.47",
     "global:2026-11-11:META:5.12",
@@ -69,6 +69,9 @@
     "news:https://www.finextra.com/newsarticle/48759/openai-launches-chatgpt-wallet?utm_medium=rssfinextra&utm_source=finextrafeed",
     "news:https://techcrunch.com/2026/11/13/jensen-huangs-departure-blasts-big-hole-in-ai-startup-funding-vcs-and-founders-say/",
     "news:https://www.theverge.com/ai-artificial-intelligence/1033425/openai-chatgpt-wallet",
-    "news:https://techcrunch.com/2026/11/13/ai-agent-startup-langchain-hits-3b-valuation/"
+    "news:https://techcrunch.com/2026/11/13/ai-agent-startup-langchain-hits-3b-valuation/",
+    "news:https://www.bleepingcomputer.com/news/security/us-disrupts-north-korean-campaign-behind-400-million-crypto-theft/",
+    "news:https://techcrunch.com/2026/11/14/the-ai-graveyard-a-running-list-of-projects-and-startups-that-didnt-make-it/",
+    "news:https://www.theverge.com/podcast/1032907/helen-toner-openai-cset-ai-safety-policy-interview"
   ]
 }
