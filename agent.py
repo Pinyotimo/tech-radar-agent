@@ -53,15 +53,14 @@ GH_PAT = os.environ.get("GH_PAT")  # PAT (read:user, repo) -> includes private a
 LOCATION = {"name": "Nairobi", "lat": -1.2921, "lon": 36.8219}
 
 # NSE tickers. Dangote Petroleum Refinery is NOT listed on any exchange, so it cannot be priced.
-# Quickmart (QMART) is not in the NSE listing either; it shows "not found" and will appear
-# automatically if it ever lists. Eveready East Africa is "EVRD"; EGAD is Eaagads.
+# Quickmart (QMRT) listed on 12 Nov 2026; Eveready East Africa is "EVRD"; EGAD is Eaagads.
 NSE_WATCHLIST = {
     "Co-op Bank": "COOP",
     "Stanbic Holdings": "SBIC",
     "EABL": "EABL",
     "BK Group": "BKG",
     "Eaagads": "EGAD",
-    "Quickmart": "QMART",
+    "Quickmart": "QMRT",
 }
 HISTORY_START = "2026-11-10"  # ignore stored prices before this (older scraper was inaccurate)
 
@@ -107,27 +106,68 @@ NEWS_FEEDS = {
         "https://news.google.com/rss/search?q=Nairobi+tech+event+OR+hackathon+OR+summit+Kenya&hl=en-KE&gl=KE&ceid=KE:en",
         "https://techweez.com/feed/",
     ],
+    "NSE & Kenya Markets": [
+        "https://news.google.com/rss/search?q=Nairobi+Securities+Exchange&hl=en-KE&gl=KE&ceid=KE:en",
+        "https://news.google.com/rss/search?q=NSE+Kenya+stocks+OR+shares&hl=en-KE&gl=KE&ceid=KE:en",
+        "https://nairobileo.co.ke/feed/business",
+        "https://www.capitalfm.co.ke/business/feed/",
+    ],
 }
 REDDIT_LANGS = {"Rust": "rust", "C#": "csharp", "Java": "java",
                 "Node.js": "node", "Kenya Tech": "KenyaTech"}
 
 # Luma's public "discover" feed for Nairobi (id taken from https://lu.ma/nairobi).
 LUMA_PLACE_ID = "discplace-YSx1DPerjjIyq7M"
-# Funds shown in the MMF section. No yields are shown until a yield collector exists.
-MMF_WATCH = ["Arvocap Money Market Fund", "Mansa-X / Mansa Plus", "OAK Money Market Fund"]
+
+# Funds tracked in the MMF & special-fund section. Serrari Group republishes every
+# fund manager's own daily/weekly figure, so one page covers the whole CMA universe;
+# each record below says which of its two tables to read and how to match the row.
+MMF_WATCH = [
+    {"key": "oak", "name": "Oak Multi Asset (KES)", "manager": "Faida Investment Bank",
+     "kind": "Special fund", "table": "special", "match": "Oak Multi Asset"},
+    {"key": "mansa_x", "name": "Mansa-X (KES)", "manager": "Standard Investment Bank",
+     "kind": "Special fund", "table": "special", "match": "Mansa-X (KES)"},
+    {"key": "arvocap", "name": "Arvocap Money Market Fund", "manager": "Arvocap Asset Managers",
+     "kind": "MMF", "table": "mmf", "match": "Arvocap"},
+    {"key": "cytonn", "name": "Cytonn Money Market Fund", "manager": "Cytonn Asset Managers",
+     "kind": "MMF", "table": "mmf", "match": "Cytonn"},
+    {"key": "etica", "name": "Etica Money Market Fund", "manager": "Etica Capital",
+     "kind": "MMF", "table": "mmf", "match": "Etica"},
+]
+MMF_HISTORY = DATA_DIR / "mmf_history.json"
+NSE_WEEKLY_CACHE = DATA_DIR / "nse_weekly.json"
+SERRARI_MMF_URL = "https://serrarigroup.com/ke/mmf"
+SERRARI_SPECIAL_URL = "https://serrarigroup.com/ke/special-funds"
+SERRARI_DIVCAL_URL = "https://serrarigroup.com/guides/wealth-builder/nse-dividend-calendar-2026"
+BUSINESSRADAR_DIVCAL_URL = "https://businessradar.co.ke/nse-dividend-calendar-kenya/"
 
 # ------------------------------------------------------------------ LLM
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 if GROQ_API_KEY:
-    client = OpenAI(base_url="https://api.groq.com/openai/v1", api_key=GROQ_API_KEY)
+    client = OpenAI(base_url="https://api.groq.com/openai/v1", api_key=GROQ_API_KEY, timeout=20)
     MODEL_NAME = os.environ.get("GROQ_MODEL", "llama-3.1-8b-instant")
     LLM_NAME = f"Groq ({MODEL_NAME})"
 else:
-    client = OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
+    client = OpenAI(base_url="http://localhost:11434/v1", api_key="ollama", timeout=90, max_retries=0)
     MODEL_NAME, LLM_NAME = "llama3.2", "Ollama Llama 3.2 (local)"
 
 
+def _llm_ready():
+    """Avoid a timeout per call when no local model is running."""
+    if GROQ_API_KEY:
+        return True
+    try:
+        return requests.get("http://localhost:11434/api/tags", timeout=2).status_code == 200
+    except requests.RequestException:
+        return False
+
+
+LLM_READY = _llm_ready()
+
+
 def llm(system: str, user: str, max_tokens: int = 350) -> str:
+    if not LLM_READY:
+        return ""
     try:
         r = client.chat.completions.create(
             model=MODEL_NAME, max_tokens=max_tokens, temperature=0.3,
@@ -326,22 +366,32 @@ def _num(s):
         return None
 
 
-def _http_get(url):
+def _http_get(url, retries=3, timeout=20):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml", "Accept-Language": "en-US,en;q=0.9"}
     last_error = None
-    for attempt in range(3):
+    for attempt in range(retries):
         try:
-            r = requests.get(url, timeout=20, headers=headers)
+            r = requests.get(url, timeout=timeout, headers=headers)
             r.raise_for_status()
             return r.text
         except requests.RequestException as e:
             last_error = e
-            if attempt < 2:
+            if attempt < retries - 1:
                 time.sleep(2 ** attempt)
-    raise RuntimeError(f"request failed after 3 attempts: {url}") from last_error
+    raise RuntimeError(f"request failed after {retries} attempts: {url}") from last_error
+
+
+def _afx_up():
+    """Cheap reachability probe so a dead chart host fails fast instead of timing out per ticker."""
+    try:
+        r = requests.get("https://afx.kwayisi.org/nseke", timeout=6, headers={
+            "User-Agent": "Mozilla/5.0 (compatible; TechRadarAgent/2.0)"})
+        return r.status_code == 200
+    except requests.RequestException:
+        return False
 
 
 def _debug_dump(name, html, rows):
@@ -369,7 +419,7 @@ def _nse_stockanalysis():
 
 def _nse_afx():
     """Columns: Ticker | Name | Volume | Price | Change (absolute)"""
-    html = _http_get("https://afx.kwayisi.org/nseke")
+    html = _http_get("https://afx.kwayisi.org/nseke", retries=1, timeout=10)
     rows = parse_rows(html)
     out = {}
     for c in rows:
@@ -428,15 +478,20 @@ CHART_POINT_RE = re.compile(r'd\("(\d{4}-\d{2}-\d{2})"\),\s*([0-9.]+)\]')
 
 def _nse_daily_closes(sym, days=NSE_TREND_DAYS):
     """Past daily closes {date: price} for one NSE ticker from afx.kwayisi.org's chart feed."""
-    js = _http_get(f"https://afx.kwayisi.org/chart/nse/{sym.lower()}")
+    js = _http_get(f"https://afx.kwayisi.org/chart/nse/{sym.lower()}", retries=1, timeout=10)
     since = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
     return {d: float(p) for d, p in CHART_POINT_RE.findall(js) if d >= since and float(p) > 0}
 
 
-def backfill_history(hist, days=NSE_TREND_DAYS, min_points=10):
+def backfill_history(hist, days=NSE_TREND_DAYS, min_points=10, table=None):
     """Fill missing past closes so sparklines show a real trend instead of a single point."""
+    if not _afx_up():
+        print("  ... afx unreachable; keeping stored NSE history")
+        return
     since = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
     for sym in NSE_WATCHLIST.values():
+        if table is not None and table.get(sym, (None,))[0] is None:
+            continue  # not listed / not in the current table (e.g. a pending IPO)
         if sum(1 for d in hist[sym] if d >= since) >= min_points:
             continue
         try:
@@ -454,9 +509,9 @@ def collect_nse(table=None):
     # Preserve all collected dates so the watchlist trend can grow across runs.
     # The source parser already rejects malformed/currently unusable data.
     hist = load_history(since=None)
-    backfill_history(hist)
     if table is None:
         table = safe(get_nse_table, {}, "nse table")
+    backfill_history(hist, table=table)
     if not table:
         # Keep showing the last known counters during a temporary runner/source outage.
         # The rows are marked stale below; legacy prices are only used when no current
@@ -769,7 +824,338 @@ def reddit_chart(reddit):
     return fig_to_image(fig)
 
 
-# ------------------------------------------------------------------ 5. ALERTS
+# ------------------------------------------------------------------ 5. MMFs, CORPORATE ACTIONS, WEEKLY MOVERS
+def _pct_in(s):
+    """First percentage found in a scraped cell ("10.95 %", "KES 1,260,520,052")."""
+    m = re.search(r"(-?\d+(?:\.\d+)?)\s*%", s or "")
+    return float(m.group(1)) if m else None
+
+
+def _serrari_table(url, min_cols=5):
+    """Rows of a Serrari comparison table as cleaned cell lists (header removed)."""
+    html = _http_get(url)
+    out = []
+    for r in parse_rows(html):
+        cells = [re.sub(r"\s+", " ", c).strip() for c in r]
+        if len(cells) < min_cols:
+            continue
+        if cells[0].lower() in ("#", "rank", "no.", "no", ""):
+            continue
+        out.append(cells)
+    return out, html
+
+
+def _load_mmf_history():
+    if MMF_HISTORY.exists():
+        try:
+            return json.loads(MMF_HISTORY.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+    return {}
+
+
+def _save_mmf_history(hist):
+    MMF_HISTORY.write_text(json.dumps(hist, indent=2), encoding="utf-8")
+
+
+def collect_mmfs():
+    """Watched funds + the full MMF/special-fund universe, with daily history.
+
+    Serrari republishes each manager's own published figure; the record keeps the
+    manager's as-at date and never estimates a missing yield.
+    """
+    mmf_rows, mmf_html = _serrari_table(SERRARI_MMF_URL)
+    special_rows, _ = _serrari_table(SERRARI_SPECIAL_URL)
+
+    avg = None
+    m = re.search(r"Average Index:\s*([\d.]+)%\s*across\s*(\d+)\s*funds", mmf_html)
+    if m:
+        avg = float(m.group(1))
+    as_of = None
+    plain = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", mmf_html))
+    m = re.search(r"Data as of (\d{1,2} \w+ \d{4})", plain)
+    if m:
+        as_of = m.group(1)
+    macro = {}
+    for label, key in ((r"CBR\s*([\d.]+)\s*%", "cbr"), (r"Inflation \(YoY\)\s*([\d.]+)\s*%", "inflation"),
+                       (r"USD/KES\s*([\d.]+)", "usdkes")):
+        m = re.search(label, plain)
+        if m:
+            macro[key] = float(m.group(1))
+
+    mmfs = {}
+    for r in mmf_rows:
+        company = r[1] if len(r) > 1 else ""
+        if not company:
+            continue
+        mmfs[company.lower()] = {
+            "name": r[5] if len(r) > 5 else company, "company": company,
+            "yield": _pct_in(r[2]) if len(r) > 2 else None,
+            "net": _pct_in(r[7]) if len(r) > 7 else None,
+            "fee": _pct_in(r[6]) if len(r) > 6 else None,
+            "aum": r[8] if len(r) > 8 else None, "min": r[4] if len(r) > 4 else None,
+            "kind": "MMF",
+        }
+    special = {}
+    for r in special_rows:
+        fname = re.sub(r"\s*i$", "", r[1]).strip() if len(r) > 1 else ""
+        if not fname:
+            continue
+        special[fname.lower()] = {
+            "name": fname, "manager": r[2] if len(r) > 2 else "",
+            "yield": _pct_in(r[4]) if len(r) > 4 else None,
+            "net": _pct_in(r[5]) if len(r) > 5 else None,
+            "aum": r[6] if len(r) > 6 else None, "min": r[7] if len(r) > 7 else None,
+            "lock": r[8] if len(r) > 8 else None, "fee": _pct_in(r[9]) if len(r) > 9 else None,
+            "risk": r[11] if len(r) > 11 else None, "kind": "Special fund",
+        }
+
+    hist = _load_mmf_history()
+    cutoff = (NOW - timedelta(days=30)).date()
+    watch = []
+    for spec in MMF_WATCH:
+        src = mmfs if spec["table"] == "mmf" else special
+        key = spec["match"].lower()
+        rec = next((v for k, v in src.items() if key in k or k in key), None)
+        rec = dict(rec) if rec else {}
+        rec.update(key=spec["key"], watch_name=spec["name"], manager=spec["manager"],
+                   kind=spec["kind"], as_of=as_of, source="Serrari Group")
+        if rec.get("yield") is not None:
+            series = hist.setdefault(spec["key"], [])
+            if not series or series[-1].get("date") != TODAY:
+                series.append({"date": TODAY, "yield": rec["yield"], "net": rec.get("net")})
+            else:
+                series[-1].update({"yield": rec["yield"], "net": rec.get("net")})
+            hist[spec["key"]] = series[-120:]
+            older = [p for p in series if datetime.fromisoformat(p["date"]).date() <= cutoff]
+            base = older[-1] if older else (series[0] if len(series) > 1 else None)
+            rec["change30"] = (rec["yield"] - base["yield"]) if base else None
+        else:
+            rec["change30"] = None
+        watch.append(rec)
+    _save_mmf_history(hist)
+
+    priced = sorted((v for v in mmfs.values() if v.get("yield") is not None),
+                    key=lambda x: -x["yield"])
+    for i, v in enumerate(priced, 1):
+        v["rank"] = i
+    return {"watch": watch, "mmfs": priced, "special": list(special.values()),
+            "market_avg": avg, "as_of": as_of, "source": "Serrari Group",
+            "source_url": SERRARI_MMF_URL, "history": hist, "macro": macro}
+
+
+def _parse_date(s):
+    """Tolerant parser for scraped announcement dates ('2 Dec 2025', '27-Nov-26')."""
+    s = (s or "").strip()
+    s = re.sub(r"^(On/about|on/about|On\s)\s*", "", s)
+    s = s.replace("†", "").replace("*", "").strip()
+    m = re.search(r"(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})", s)
+    if m:
+        for fmt in ("%d %Y %B", "%d %Y %b"):
+            try:
+                return datetime.strptime(f"{m.group(1)} {m.group(3)} {m.group(2)}", fmt).date()
+            except ValueError:
+                continue
+    m = re.search(r"(\d{1,2})-([A-Za-z]{3})-(\d{2,4})", s)
+    if m:
+        yr = m.group(3) if len(m.group(3)) == 4 else "20" + m.group(3)
+        try:
+            return datetime.strptime(f"{m.group(1)} {yr} {m.group(2)}", "%d %Y %b").date()
+        except ValueError:
+            return None
+    return None
+
+
+def _divcal_record(company, ticker, dtype, dps, closure, payment, status, source):
+    d = _parse_date(closure)
+    if not d:
+        return None
+    m = re.search(r"\(([A-Z]{2,6})\)", company or "")
+    return {"company": re.sub(r"\s*\([A-Z]{2,6}\)\s*", "", company or "").strip(),
+            "ticker": (ticker or m.group(1) if m else ""), "type": dtype, "dps": dps,
+            "closure": d, "closure_text": closure, "payment": _parse_date(payment),
+            "payment_text": payment, "status": status, "source": source}
+
+
+def collect_corporate_actions():
+    """Upcoming and recent NSE book closures / dividends from public calendars.
+
+    Serrari carries the full announced history; Business Radar's calendar is more
+    promptly updated for new closures, so both are read and merged.
+    """
+    records = []
+    try:
+        rows, _ = _serrari_table(SERRARI_DIVCAL_URL, min_cols=7)
+        for r in rows:
+            if len(r) < 8 or r[0].lower() == "company":
+                continue
+            rec = _divcal_record(r[0], r[1], r[2], r[3], r[6], r[7], r[8] if len(r) > 8 else "",
+                                 "Serrari NSE dividend calendar")
+            if rec:
+                records.append(rec)
+    except Exception as e:
+        print(f"  ! serrari dividend calendar: {e}")
+
+    try:
+        rows, _ = _serrari_table(BUSINESSRADAR_DIVCAL_URL, min_cols=6)
+        for r in rows:
+            if len(r) < 6 or r[0].lower() == "company":
+                continue
+            rec = _divcal_record(r[0], "", r[1], r[2], r[4], r[5], r[6] if len(r) > 6 else "",
+                                 "Business Radar NSE dividend calendar")
+            if rec:
+                records.append(rec)
+    except Exception as e:
+        print(f"  ! businessradar dividend calendar: {e}")
+
+    # Merge: same company + closure date is the same event; keep the first (Serrari
+    # history first, Business Radar's newer rows fill gaps).
+    merged, seen = [], set()
+    for ev in records:
+        key = (re.sub(r"[^a-z]", "", ev["company"].lower()), ev["closure"])
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(ev)
+    records = merged
+
+    today = NOW.date()
+    for ev in records:
+        ev["days"] = (ev["closure"] - today).days
+    upcoming = sorted((e for e in records if e["closure"] >= today), key=lambda x: x["closure"])
+    recent = sorted((e for e in records if today - timedelta(days=45) <= e["closure"] < today),
+                    key=lambda x: x["closure"], reverse=True)
+    srcs = sorted({e["source"] for e in records})
+    return {"upcoming": upcoming[:12], "recent": recent[:8], "all": records,
+            "source": "; ".join(srcs) if srcs else "no source"}
+
+
+def _afx_closes_fast(sym, days=45):
+    """Single-attempt chart fetch: weekly movers polls ~70 counters, so retries are too costly."""
+    since = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    try:
+        r = requests.get(f"https://afx.kwayisi.org/chart/nse/{sym.lower()}", timeout=8, headers={
+            "User-Agent": "Mozilla/5.0 (compatible; TechRadarAgent/2.0; personal use)"})
+        r.raise_for_status()
+    except (requests.RequestException, ValueError):
+        return {}
+    return {d: float(p) for d, p in CHART_POINT_RE.findall(r.text) if d >= since and float(p) > 0}
+
+
+def collect_weekly_movers(nse_table):
+    """Best/worst NSE counters over the last 5 and 21 trading days (afx chart feed)."""
+    today = TODAY
+    prev = None
+    if NSE_WEEKLY_CACHE.exists():
+        try:
+            prev = json.loads(NSE_WEEKLY_CACHE.read_text(encoding="utf-8"))
+            if prev.get("date") == today:
+                return prev
+        except (OSError, ValueError):
+            prev = None
+    tickers = [k for k, v in (nse_table or {}).items() if v and v[0] is not None]
+    if not _afx_up():
+        if prev:
+            print(f"  ... afx unreachable; using {prev.get('date')} weekly cache")
+            prev = dict(prev)
+            prev["stale"] = True
+            return prev
+        return {"date": today, "as_of": None, "movers": [], "count": 0, "stale": True}
+    series = {}
+    for i, sym in enumerate(tickers):
+        closes = _afx_closes_fast(sym, days=45)
+        pts = sorted(closes.items())
+        if len(pts) >= 6:
+            series[sym] = pts
+        time.sleep(0.5)    # be polite: ~70 counters, and afx rate-limits bursts
+    if len(series) < 10 and prev:
+        print(f"  ... weekly movers: only {len(series)} counters read; using {prev.get('date')} cache")
+        prev = dict(prev)
+        prev["stale"] = True
+        return prev
+    out = []
+    for sym, pts in series.items():
+        last_d, last_p = pts[-1]
+        w_base = pts[-6][1]
+        m_base = pts[-22][1] if len(pts) >= 22 else pts[0][1]
+        name = (nse_table.get(sym) or (None, None, "", None))[2]
+        out.append({"sym": sym, "name": name, "price": last_p, "as_of": last_d,
+                    "week": (last_p / w_base - 1) * 100 if w_base else None,
+                    "month": (last_p / m_base - 1) * 100 if m_base else None})
+    out.sort(key=lambda x: -(x["week"] if x["week"] is not None else -999))
+    cache = {"date": today, "as_of": max((x["as_of"] for x in out), default=None),
+             "movers": out, "count": len(out), "stale": False}
+    NSE_WEEKLY_CACHE.write_text(json.dumps(cache, indent=2), encoding="utf-8")
+    return cache
+
+
+def mmf_chart(data):
+    """Gross vs after-tax yield for the watched funds, with the market average."""
+    watch = [w for w in data.get("watch") or [] if w.get("yield") is not None]
+    if not watch:
+        return None
+    labels = [w["watch_name"].replace(" Money Market Fund", " MMF").replace(" Multi Asset", "")
+              for w in watch]
+    vals = [w["yield"] for w in watch]
+    nets = [w["net"] if w.get("net") is not None else w["yield"] * 0.85 for w in watch]
+    fig, ax = plt.subplots(figsize=(8, 3.2))
+    x = list(range(len(watch)))
+    ax.bar([i - 0.2 for i in x], vals, 0.4, color=BLUE, label="Published yield")
+    ax.bar([i + 0.2 for i in x], nets, 0.4, color=TEAL, label="After 15% WHT")
+    avg = data.get("market_avg")
+    if avg:
+        ax.axhline(avg, color=AMBER, lw=1.6, ls="--", label=f"Market avg {avg:.2f}%")
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, rotation=18, ha="right", fontsize=8)
+    ax.set_ylabel("% p.a.")
+    ttl(ax, "Watched funds - published yield vs after-tax")
+    ax.legend(frameon=False, fontsize=8)
+    fig.tight_layout()
+    return fig_to_image(fig)
+
+
+def mmf_history_chart(data):
+    hist = data.get("history") or _load_mmf_history()
+    series = []
+    for w in data.get("watch") or []:
+        pts = hist.get(w["key"]) or []
+        if len(pts) >= 2:
+            series.append((w["watch_name"], [(datetime.fromisoformat(p["date"]), p["yield"])
+                                             for p in pts[-60:]]))
+    if not series:
+        return None
+    fig, ax = plt.subplots(figsize=(8, 3))
+    for name, pts in series:
+        ax.plot([p[0] for p in pts], [p[1] for p in pts], marker="o", ms=3, lw=1.6, label=name)
+    ax.set_ylabel("% p.a.")
+    ttl(ax, "Yield history - daily readings")
+    ax.legend(frameon=False, fontsize=7, ncol=2)
+    fig.tight_layout()
+    return fig_to_image(fig)
+
+
+def weekly_movers_chart(cache):
+    movers = [m for m in (cache.get("movers") or []) if m.get("week") is not None]
+    if not movers:
+        return None
+    rows = movers[:5] + movers[-5:][::-1]
+    fig, ax = plt.subplots(figsize=(8, 3.4))
+    labels = [f"{m['sym']}  {(m.get('name') or '')[:20]}" for m in rows]
+    vals = [m["week"] for m in rows]
+    ax.barh(list(range(len(rows))), vals, color=[GREEN if v >= 0 else RED for v in vals], alpha=0.85)
+    ax.set_yticks(list(range(len(rows))))
+    ax.set_yticklabels(labels, fontsize=8)
+    ax.invert_yaxis()
+    ax.axvline(0, color=GREY, lw=0.8)
+    for i, v in enumerate(vals):
+        ax.text(v + (0.15 if v >= 0 else -0.15), i, f"{v:+.2f}%", va="center",
+                ha="left" if v >= 0 else "right", fontsize=7.5, color=NAVY, fontweight="bold")
+    ttl(ax, "Best and worst NSE counters - last 5 trading days")
+    fig.tight_layout()
+    return fig_to_image(fig)
+
+
+# ------------------------------------------------------------------ 6. ALERTS
 def _load_alert_state():
     if not ALERT_STATE.exists():
         return {"last_run": None, "seen": []}
@@ -1128,8 +1514,8 @@ def build_pdf(path, weather, nse, glob, gh_data, news, reddit, brief, news_take,
         s.append(Spacer(1, 4))
         s += [news_block(it) for it in prep["items"][:6]]
 
-    # 4. Nairobi events
-    s += section("4  Nairobi technology events", 50)
+    # 3. Nairobi events
+    s += section("3  Nairobi technology events", 50)
     if prep["events"]:
         rows = []
         for ev in sorted(prep["events"], key=lambda x: (-x["register_now"], x["dt"]))[:12]:
@@ -1145,8 +1531,21 @@ def build_pdf(path, weather, nse, glob, gh_data, news, reddit, brief, news_take,
     else:
         s.append(P("No upcoming events returned by Luma this run.", SMALL))
 
-    # 7-8. Markets
-    s += section("7-8  Markets", 90)
+    # 4. Developer activity
+    if gh_data:
+        u = gh_data["user"]
+        s += section(f"4  Developer activity - GitHub {GITHUB_USER}", 110) + [
+            kpi_row([("Commits (14d)", gh_data["total14"]), ("Public repos", u["public_repos"]),
+                     ("Stars", gh_data["stars"]), ("Followers", u["followers"])]),
+            Spacer(1, 6), github_charts(gh_data)]
+        if gh_data["pushes"]:
+            s += [P("Recent pushes", H3),
+                  data_table(["When", "Repo", "#", "Latest message"],
+                             [[w, trunc(r.split("/")[-1], 26), n, trunc(m, 48)] for w, r, n, m in gh_data["pushes"]],
+                             [28, 55, 10, 87], mono_cols=(0,))]
+
+    # 5. Markets
+    s += section("5  Markets", 90)
     if nse:
         ch = nse_chart(nse)
         if ch:
@@ -1184,27 +1583,83 @@ def build_pdf(path, weather, nse, glob, gh_data, news, reddit, brief, news_take,
                                     + [bullet(l) for l in ctx["market_take"].splitlines() if l.strip()],
                                     PURPLE)]
 
-    # 9-10. Not connected yet
-    s += section("9-10  Dividends, corporate actions and MMFs", 40)
-    s.append(callout([P("Not connected yet. No dividend, book-closure or MMF yield data is collected, so none is "
-                        "shown. These sections fill only from official announcements and published yields and are never "
-                        f"estimated. Funds being watched: {', '.join(MMF_WATCH)}.", BODY)], GREY, LIGHT))
+    wk = ctx.get("weekly") or {}
+    if wk.get("movers"):
+        wc = weekly_movers_chart(wk)
+        if wc:
+            s += [Spacer(1, 8), wc]
+        best, worst = wk["movers"][0], wk["movers"][-1]
+        s.append(callout([P(f"Best of the week: {best['sym']} {fmt_pct(best['week'])} · "
+                           f"Worst: {worst['sym']} {fmt_pct(worst['week'])} "
+                           f"({wk.get('as_of') or 'n/a'}, {wk.get('count', 0)} counters)", BODY)], TEAL))
 
-    # GitHub (3. AI & developer)
-    if gh_data:
-        u = gh_data["user"]
-        s += section(f"3  Developer activity - GitHub {GITHUB_USER}", 110) + [
-            kpi_row([("Commits (14d)", gh_data["total14"]), ("Public repos", u["public_repos"]),
-                     ("Stars", gh_data["stars"]), ("Followers", u["followers"])]),
-            Spacer(1, 6), github_charts(gh_data)]
-        if gh_data["pushes"]:
-            s += [P("Recent pushes", H3),
-                  data_table(["When", "Repo", "#", "Latest message"],
-                             [[w, trunc(r.split("/")[-1], 26), n, trunc(m, 48)] for w, r, n, m in gh_data["pushes"]],
-                             [28, 55, 10, 87], mono_cols=(0,))]
+    # 6. Dividends, book closures and corporate actions
+    ca = ctx.get("corporate_actions") or {}
+    s += section("6  Dividends, book closures and corporate actions", 60)
+    if ca.get("upcoming"):
+        rows = []
+        for ev in ca["upcoming"][:10]:
+            rows.append([Paragraph(ev.get("ticker") or "-", SMALL),
+                         Paragraph(trunc(ev["company"], 34), SMALL),
+                         Paragraph(ev.get("dps") or "-", SMALL),
+                         Paragraph(ev["closure"].strftime("%a %d %b %Y"), SMALL),
+                         Paragraph(f'{ev["days"]}d', SMALL),
+                         Paragraph(trunc(ev.get("payment_text") or "-", 22), SMALL),
+                         Paragraph(trunc(ev.get("status") or "-", 30), SMALL)])
+        s.append(data_table(["Code", "Company", "DPS", "Book closure", "In", "Payment", "Status"],
+                            rows, [12, 50, 18, 30, 10, 28, 32]))
+        s.append(P("Source: " + ca.get("source", "") + ". Dates are issuer/CDSC announcements, not exchange "
+                    "guarantees. NSE equities settle T+3, so the last cum-date (not the closure date) is the "
+                    "real qualification deadline. Confirm the latest notice before trading.", SMALL))
+    else:
+        s.append(P("No upcoming book closures were found in the collected calendars this run.", SMALL))
+    if ca.get("recent"):
+        s.append(Spacer(1, 4))
+        s.append(P("Recently closed: " + "; ".join(
+            f"{e['ticker'] or e['company']} ({e['closure'].strftime('%d %b')})" for e in ca["recent"][:6]), SMALL))
+
+    # 7. MMFs and special funds
+    mmf = ctx.get("mmf") or {}
+    s += section("7  MMFs and special funds", 60)
+    if mmf.get("watch"):
+        ch = mmf_chart(mmf)
+        if ch:
+            s.append(ch)
+        macro = mmf.get("macro") or {}
+        bits = []
+        if macro.get("cbr") is not None:
+            bits.append(f"CBK rate {macro['cbr']:.2f}%")
+        if macro.get("inflation") is not None:
+            bits.append(f"inflation {macro['inflation']:.1f}%")
+        if macro.get("usdkes") is not None:
+            bits.append(f"USD/KES {macro['usdkes']:.2f}")
+        if bits:
+            s.append(P("Rates: " + " · ".join(bits), SMALL))
+        rows = []
+        for w in mmf["watch"]:
+            rows.append([Paragraph(trunc(w["watch_name"], 30), SMALL),
+                         Paragraph(w.get("kind") or "", SMALL),
+                         Paragraph(f'{w["yield"]:.2f}%' if w.get("yield") is not None else "n/a", SMALL),
+                         Paragraph(f'{w["net"]:.2f}%' if w.get("net") is not None else "n/a", SMALL),
+                         Paragraph(f'{w["change30"]:+.2f} pp' if w.get("change30") is not None else "-", SMALL),
+                         Paragraph(trunc(w.get("aum") or "-", 16), SMALL),
+                         Paragraph(trunc(w.get("min") or "-", 16), SMALL)])
+        s.append(data_table(["Fund", "Type", "Yield", "After tax", "30d chg", "AUM", "Min"],
+                            rows, [48, 22, 16, 18, 16, 22, 20]))
+        avg = mmf.get("market_avg")
+        s.append(P((f"Market average across {len(mmf.get('mmfs') or [])} shilling MMFs: {avg:.2f}%"
+                    if avg else "Market average unavailable")
+                    + f" · figures as at {mmf.get('as_of') or 'n/a'} · source: {mmf.get('source', 'Serrari Group')}. "
+                    "Yields are the managers' published figures, net of fees and before 15% withholding tax "
+                    "unless labelled after tax. Past yields are not a promise.", SMALL))
+        hc = mmf_history_chart(mmf)
+        if hc:
+            s += [Spacer(1, 6), hc]
+    else:
+        s.append(P("MMF and special-fund data was unavailable this run.", SMALL))
 
     # News by desk
-    s += section("News coverage by desk", 60)
+    s += section("8  News coverage by desk", 60)
     for sec_name, items in news.items():
         col = report_html.DESK_HEX.get(sec_name, BLUE)
         block = [Paragraph(f'<font color="{col}">●</font> {escape(sec_name)}', H3)]
@@ -1217,8 +1672,8 @@ def build_pdf(path, weather, nse, glob, gh_data, news, reddit, brief, news_take,
                                    + f' <font color="{GREY}">· {escape(latin(i.get("source") or ""))} · {when}</font>', SMALL))
         s.append(KeepTogether(block))
 
-    # 11. Reddit
-    s += section("11  Reddit - community discussion (opinion, not fact)", 60)
+    # 9. Reddit
+    s += section("9  Reddit - community discussion (opinion, not fact)", 60)
     rc = reddit_chart(reddit)
     if rc:
         s.append(rc)
@@ -1230,9 +1685,9 @@ def build_pdf(path, weather, nse, glob, gh_data, news, reddit, brief, news_take,
     if not any(reddit.values()):
         s.append(P("Reddit blocked the request (common from cloud IPs). Try running locally.", SMALL))
 
-    # 12. Opportunities
+    # 10. Opportunities
     if prep["ops"]:
-        s += section("12  Opportunities worth watching", 40)
+        s += section("10  Opportunities worth watching", 40)
         for o in prep["ops"]:
             s.append(Paragraph(f'<font name="{SANS_B}" color="{PURPLE}">{escape(o["kind"].upper())}</font>  '
                                + link_markup(o["title"], o["url"] or "") + f'<br/><font color="{GREY}">{escape(latin(o["why"]))}</font>', BUL))
@@ -1283,6 +1738,9 @@ def run_agent():
     news = safe(collect_news, {}, "news")
     reddit = safe(collect_reddit, {}, "reddit")
     events = safe(collect_events, [], "luma events")
+    mmf = safe(collect_mmfs, {}, "mmf")
+    corp = safe(collect_corporate_actions, {}, "corporate actions")
+    weekly = safe(lambda: collect_weekly_movers(nse_table), {}, "weekly movers")
 
     news_take = {sec: takeaways(sec, items) for sec, items in news.items()}
     for sec, items in news.items():
@@ -1300,6 +1758,10 @@ def run_agent():
             f"{e['name']} on {e['start'][:10]}" for e in events[:5]) + "\n"
     if gh_data:
         context += f"GitHub: {gh_data['total14']} commits in 14 days\n"
+    if mmf.get("watch"):
+        context += "MMF / special-fund yields: " + "; ".join(
+            f"{w['watch_name']} {w['yield']:.2f}%" for w in mmf["watch"]
+            if w.get("yield") is not None) + "\n"
     context += "\n".join(f"{k}: " + "; ".join(i["title"] for i in v[:3]) for k, v in news.items())
     brief = llm("Write a morning executive brief for a Nairobi software engineer who also invests: exactly 5 "
                 "bullet lines ('- '), max 26 words each, most important first. Cover the biggest tech story, "
@@ -1314,7 +1776,8 @@ def run_agent():
         "nse": nse, "glob": glob, "gh": gh_data, "github_user": GITHUB_USER, "news": news,
         "news_take": news_take, "reddit": reddit, "reddit_subs": REDDIT_LANGS, "brief": brief,
         "market_take": market_take, "events": events, "keywords": ALERT_KEYWORDS,
-        "move_threshold": ALERT_MOVE_THRESHOLD, "mmf_watch": MMF_WATCH, "nse_source": nse_source,
+        "move_threshold": ALERT_MOVE_THRESHOLD, "mmf": mmf, "corporate_actions": corp,
+        "weekly": weekly, "nse_source": nse_source,
         "nse_market": [{"sym": k, "price": v[0], "pct": v[1], "name": v[2], "volume": v[3]}
                        for k, v in nse_table.items()],
         "feed_sources": sorted({i["source"] for v in news.values() for i in v if i.get("source")}),
@@ -1331,8 +1794,17 @@ def run_agent():
             _status("GitHub", gh_data, "activity, repos and commits", "GitHub API unavailable"),
             _status("Weather", weather, "Open-Meteo", "Open-Meteo unavailable"),
             _status("AI analysis", brief, LLM_NAME, f"{LLM_NAME} unavailable - reports show data only"),
-            {"name": "Dividends & corporate actions", "ok": None, "detail": "not connected"},
-            {"name": "MMF yields", "ok": None, "detail": "not connected"},
+            _status("MMF & special-fund yields",
+                    bool(mmf.get("watch")) and any(w.get("yield") is not None for w in mmf["watch"]),
+                    f"{sum(1 for w in mmf['watch'] if w.get('yield') is not None)} of {len(mmf.get('watch') or [])} "
+                    f"watched funds · as at {mmf.get('as_of') or 'n/a'}",
+                    "Serrari MMF feed unavailable"),
+            _status("NSE book closures", bool(corp.get("upcoming")),
+                    f"{len(corp.get('upcoming') or [])} upcoming · {len(corp.get('recent') or [])} recently closed",
+                    "dividend calendars unavailable"),
+            _status("Weekly NSE movers", bool(weekly.get("movers")),
+                    f"{weekly.get('count', 0)} counters · as of {weekly.get('as_of') or 'n/a'}",
+                    "afx chart feed unavailable"),
             {"name": "Instagram / WhatsApp / LinkedIn events", "ok": None, "detail": "not connected"},
         ],
     }

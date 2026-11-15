@@ -17,12 +17,13 @@ from html import escape as _esc
 
 # ------------------------------------------------------------------ TOKENS
 # News desks -> fixed categorical order (validated light + dark with the dataviz validator).
-DESKS = ["Tech Giants", "DevOps & Cloud", "Cybersecurity", "Fintech", "Kenya Tech & Events"]
+DESKS = ["Tech Giants", "DevOps & Cloud", "Cybersecurity", "Fintech", "Kenya Tech & Events",
+         "NSE & Kenya Markets"]
 DESK_ICON = {"Tech Giants": "building-2", "DevOps & Cloud": "cloud", "Cybersecurity": "shield-alert",
-             "Fintech": "landmark", "Kenya Tech & Events": "map-pin"}
+             "Fintech": "landmark", "Kenya Tech & Events": "map-pin", "NSE & Kenya Markets": "candlestick-chart"}
 # Same hexes, for the PDF and email (light surfaces only).
 DESK_HEX = {"Tech Giants": "#2563EB", "DevOps & Cloud": "#0D9488", "Cybersecurity": "#7C3AED",
-            "Fintech": "#D97706", "Kenya Tech & Events": "#DB2777"}
+            "Fintech": "#D97706", "Kenya Tech & Events": "#DB2777", "NSE & Kenya Markets": "#0F766E"}
 
 AI_RE = re.compile(r"\b(ai|a\.i\.|llms?|gpt[\w.-]*|openai|anthropic|claude|gemini|llama|copilot|chatbot|"
                    r"machine learning|deep learning|neural|agents?|agentic|nvidia|deepmind|mistral|model)\b", re.I)
@@ -103,6 +104,11 @@ def fmt_num(v):
         if abs(v) >= div:
             return f"{v / div:.1f}{suf}"
     return f"{v:,.0f}"
+
+
+def trunc(s, n):
+    s = "" if s is None else str(s)
+    return s if len(s) <= n else s[:n - 1] + "…"
 
 
 # ------------------------------------------------------------------ PRIORITISATION
@@ -332,6 +338,80 @@ def range_bar(lo, hi, cur):
     pct = (cur - lo) / (hi - lo) * 100
     return (f'<div class="range" title="30-day range {lo:,.2f} – {hi:,.2f}"><span style="left:{pct:.0f}%"></span></div>'
             f'<div class="range-lbl"><span>{lo:,.2f}</span><span>{hi:,.2f}</span></div>')
+
+
+def _mmf_short(name):
+    return (name.replace(" Money Market Fund", " MMF").replace(" Multi Asset (KES)", "")
+            .replace(" (KES)", "").replace(" Multi Asset", "").strip())
+
+
+def mmf_bars(watch, avg):
+    """Horizontal bars: published yield (light) vs after 15% WHT (solid), plus market average."""
+    rows = [w for w in watch if w.get("yield") is not None]
+    if not rows:
+        return ""
+    W, rh, L, R = 560, 38, 132, 62
+    H = len(rows) * rh + 8
+    top = max([w["yield"] for w in rows] + ([avg] if avg else [])) or 1
+    out = [f'<svg class="chart" viewBox="0 0 {W} {H}" role="img" aria-label="Watched fund yields">']
+    for i, w in enumerate(rows):
+        yy = 4 + i * rh
+        gw = w["yield"] / top * (W - L - R)
+        nw = (w.get("net") if w.get("net") is not None else w["yield"] * 0.85) / top * (W - L - R)
+        out.append(f'<text class="lbl" x="{L - 10}" y="{yy + 18}" text-anchor="end">'
+                   f'{e(_mmf_short(w["watch_name"]))}</text>')
+        out.append(f'<rect class="bar seq" x="{L}" y="{yy}" width="{gw:.1f}" height="10" rx="3"/>')
+        out.append(f'<rect class="bar seq-strong" x="{L}" y="{yy + 13}" width="{nw:.1f}" height="10" rx="3"/>')
+        out.append(f'<text class="val" x="{L + gw + 6:.1f}" y="{yy + 9}">{w["yield"]:.2f}%</text>')
+        out.append(f'<text class="axis" x="{L + nw + 6:.1f}" y="{yy + 22}">'
+                   f'{(w.get("net") if w.get("net") is not None else w["yield"] * 0.85):.2f}%</text>')
+    if avg:
+        x = L + avg / top * (W - L - R)
+        out.append(f'<line class="avgline" x1="{x:.1f}" x2="{x:.1f}" y1="0" y2="{H}"/>')
+        out.append(f'<text class="axis" x="{x:.1f}" y="{H - 2}" text-anchor="middle">avg {avg:.2f}%</text>')
+    out.append("</svg>")
+    return "".join(out)
+
+
+def mmf_history_svg(mmf):
+    """Multi-line yield history for the watched funds (daily readings stored in data/)."""
+    hist = mmf.get("history") or {}
+    series = []
+    for w in mmf.get("watch") or []:
+        pts = hist.get(w["key"]) or []
+        if len(pts) >= 2:
+            series.append((w["watch_name"], [(datetime.fromisoformat(p["date"]), p["yield"])
+                                             for p in pts[-60:]]))
+    if not series:
+        return ""
+    W, H, L, R, T, B = 560, 220, 46, 12, 14, 26
+    allpts = [p for _, pts in series for p in pts]
+    lo, hi = min(p[1] for p in allpts), max(p[1] for p in allpts)
+    span = (hi - lo) or 1
+    lo, hi = lo - span * 0.1, hi + span * 0.1
+    d0, d1 = min(p[0] for p in allpts), max(p[0] for p in allpts)
+    days = max(1, (d1 - d0).days)
+
+    def X(d):
+        return L + (d - d0).days / days * (W - L - R)
+
+    def Y(v):
+        return T + (hi - v) / (hi - lo) * (H - T - B)
+
+    out = [f'<svg class="chart" viewBox="0 0 {W} {H}" role="img" aria-label="Fund yield history">']
+    for k in range(5):
+        v = lo + (hi - lo) * k / 4
+        out.append(f'<line class="grid" x1="{L}" x2="{W - R}" y1="{Y(v):.1f}" y2="{Y(v):.1f}"/>'
+                   f'<text class="axis" x="{L - 6}" y="{Y(v) + 4:.1f}" text-anchor="end">{v:.1f}%</text>')
+    for i, (name, pts) in enumerate(series):
+        d = "M" + " L".join(f"{X(dt):.1f},{Y(v):.1f}" for dt, v in pts)
+        out.append(f'<path d="{d}" fill="none" stroke="var(--c{i % 5})" stroke-width="2" '
+                   f'stroke-linejoin="round" stroke-linecap="round"/>')
+    for k in range(5):
+        d = d0 + timedelta(days=days * k / 4)
+        out.append(f'<text class="axis" x="{X(d):.1f}" y="{H - 8}" text-anchor="middle">{d.strftime("%d %b")}</text>')
+    out.append("</svg>")
+    return "".join(out)
 
 
 # ------------------------------------------------------------------ COMPONENTS
@@ -715,51 +795,168 @@ def s_nse(ctx, P):
         movers = (f'<div class="card"><h3>{icon("bar-chart-horizontal")}Top gainers & losers, whole NSE</h3>'
                   f'{diverging_bars(sel) if sel else empty("No price changes reported for the last session.")}</div>')
     src = ctx.get("nse_source") or "NSE end-of-day table"
-    body = (watch + f'<div class="two">{breadth}{movers}</div>'
+    wk = ctx.get("weekly") or {}
+    week_block = ""
+    if wk.get("movers"):
+        best, worst = wk["movers"][0], wk["movers"][-1]
+        rows = ""
+        for m in wk["movers"][:5] + wk["movers"][-5:][::-1]:
+            rows += (f'<tr><td><span class="tick">{e(m["sym"])}</span> <span class="muted">{e(trunc(m.get("name") or "", 26))}</span></td>'
+                     f'<td class="num mono">KES {m["price"]:,.2f}</td>'
+                     f'<td class="num"><span class="chg {tone(m["week"])}">{icon(arrow(m["week"]))}{fmt_pct(m["week"])}</span></td>'
+                     f'<td class="num"><span class="chg {tone(m["month"])}">{fmt_pct(m["month"])}</span></td></tr>')
+        week_block = (f'<div class="card"><h3>{icon("calendar-clock")}Best and worst of the week</h3>'
+                      f'<p class="note">Best <b>{e(best["sym"])}</b> {fmt_pct(best["week"])} · worst '
+                      f'<b>{e(worst["sym"])}</b> {fmt_pct(worst["week"])} · {wk.get("count", 0)} counters · '
+                      f'as of {e(wk.get("as_of") or "n/a")}{" (cached)" if wk.get("stale") else ""}</p>'
+                      f'<div class="tbl-wrap"><table><thead><tr><th>Counter</th><th class="num">Last</th>'
+                      f'<th class="num">1 week</th><th class="num">1 month</th></tr></thead><tbody>{rows}</tbody></table></div></div>')
+    body = (watch + f'<div class="two">{breadth}{movers}</div>' + week_block
             + provenance(f"{e(src)} · end-of-day closes, not live · watchlist history stored in data/nse_history.csv "
-                         "since 10 Nov 2026, so sparklines grow daily"))
+                         "since 10 Nov 2026, so sparklines grow daily · weekly movers from afx.kwayisi.org chart feed"))
     return section(8, "nse", "landmark", "Kenyan NSE Market Intelligence",
                    "Your watchlist, plus breadth and movers across every listed counter.", body, "var(--emerald)")
 
 
 def s_dividends(ctx, P):
-    cols = "".join(f"<th>{c}</th>" for c in ("Company", "Ticker", "DPS (KES)", "Type", "Book closure",
-                                              "Ex-date", "Payment", "Yield", "Source"))
-    body = (f'<div class="tbl-wrap ghost"><table><thead><tr>{cols}</tr></thead><tbody>'
-            f'<tr><td colspan="9" class="muted center">{icon("plug-zap")} No dividend data collected. '
-            f'This calendar fills only from official announcements and is never estimated.</td></tr></tbody></table></div>'
-            + not_connected("NSE corporate announcements",
-                            "Dividends (interim/final, DPS), book closure, ex-dividend, register and payment dates, "
-                            "rights and bonus issues, splits and results releases, in a calendar and table. Yield is shown only "
-                            "when the DPS and current price are both verified.",
-                            "A collector for NSE's official corporate-announcements listings (PDF notices), "
-                            "with every row linked to its source notice. Unconfirmed items would be flagged.",
-                            (("NSE website", "https://www.nse.co.ke/"), ("Capital Markets Authority", "https://www.cma.or.ke/"))))
-    return section(9, "dividends", "calendar-range", "Dividend & Corporate Action Calendar",
-                   "Official corporate actions only. Amounts and dates are never inferred.", body, "var(--amber)")
+    ca = ctx.get("corporate_actions") or {}
+    upcoming = ca.get("upcoming") or []
+    recent = ca.get("recent") or []
+    if upcoming:
+        rows = ""
+        for ev in upcoming:
+            days = ev.get("days", 0)
+            if days <= 3:
+                badge = f'<span class="badge b-closing">in {days}d</span>'
+            elif days <= 14:
+                badge = f'<span class="badge b-upcoming">in {days}d</span>'
+            else:
+                badge = f'<span class="badge">{days}d</span>'
+            rows += (f'<tr><td><span class="tick">{e(ev.get("ticker") or "-")}</span> '
+                     f'<span class="muted">{e(trunc(ev["company"], 34))}</span></td>'
+                     f'<td>{e(ev.get("type") or "-")}</td><td class="num mono">{e(ev.get("dps") or "-")}</td>'
+                     f'<td class="mono">{ev["closure"].strftime("%a %d %b %Y")}</td>'
+                     f'<td>{badge}</td><td class="mono">{e(ev.get("payment_text") or "-")}</td>'
+                     f'<td class="muted">{e(trunc(ev.get("status") or "-", 42))}</td></tr>')
+        table = (f'<div class="tbl-wrap"><table><thead><tr><th>Company</th><th>Type</th><th class="num">DPS</th>'
+                 f'<th>Book closure</th><th>In</th><th>Payment</th><th>Status</th></tr></thead>'
+                 f'<tbody>{rows}</tbody></table></div>')
+    else:
+        table = empty("No upcoming book closures were found in the collected calendars.")
+    rec = ""
+    if recent:
+        rec = ('<div class="card" style="margin-top:16px"><h3>' + icon("history") + 'Recently closed</h3>'
+               '<ul class="mini">' + "".join(
+                   f'<li><span class="tick">{e(ev.get("ticker") or "-")}</span> {e(trunc(ev["company"], 32))} '
+                   f'<span class="muted">{ev["closure"].strftime("%d %b")} · {e(ev.get("dps") or "-")} · '
+                   f'{e(trunc(ev.get("status") or "-", 30))}</span></li>' for ev in recent) + '</ul></div>')
+    body = (table + rec
+            + provenance(f"{e(ca.get('source', ''))} · issuer/CDSC announcements, not exchange guarantees · NSE equities "
+                         "settle T+3, so the last cum-date (not the closure date) is the qualification deadline. "
+                         "Confirm the latest notice before trading."))
+    return section(9, "dividends", "calendar-range", "Dividend & Book Closure Calendar",
+                   "Official corporate actions only. Dates are never inferred.", body, "var(--amber)")
 
 
 def s_mmf(ctx, P):
-    funds = ctx.get("mmf_watch") or []
-    chips = "".join(f'<span class="fund">{icon("piggy-bank")}{e(f)}<em>no data yet</em></span>' for f in funds)
+    mmf = ctx.get("mmf") or {}
+    watch = mmf.get("watch") or []
+    all_mmfs = mmf.get("mmfs") or []
+    avg = mmf.get("market_avg")
+    as_of = mmf.get("as_of")
+    if not watch:
+        return section(10, "mmf", "piggy-bank", "MMF & Investment Updates", "",
+                       empty("MMF and special-fund data was unavailable this run."), "var(--teal)")
+
+    cards = ""
+    for w in watch:
+        y, net, chg = w.get("yield"), w.get("net"), w.get("change30")
+        y_txt = f"{y:.2f}%" if y is not None else "n/a"
+        net_txt = f"{net:.2f}%" if net is not None else "n/a"
+        chg_html = (f'<span class="chg {tone(chg)}">{icon(arrow(chg))}{chg:+.2f} pp</span>'
+                    if chg is not None else '<span class="muted">30d n/a</span>')
+        fee = w.get("fee")
+        fee_txt = f"{fee:.2f}%" if fee is not None else "n/a"
+        kind_cls = "b-high" if w.get("kind") == "Special fund" else "b-kw"
+        cards += (f'<div class="card fund-card"><div class="fund-card-h"><div><b>{e(w["watch_name"])}</b>'
+                  f'<div class="muted">{e(w.get("manager") or "")}</div></div>'
+                  f'<span class="badge {kind_cls}">{e(w.get("kind") or "")}</span></div>'
+                  f'<div class="fund-card-v">{y_txt}<span class="muted"> p.a.</span></div>'
+                  f'<div class="fund-card-s"><span>After 15% WHT <b>{net_txt}</b></span>{chg_html}</div>'
+                  f'<div class="fund-card-m"><span>AUM <b>{e(w.get("aum") or "n/a")}</b></span>'
+                  f'<span>Min <b>{e(w.get("min") or "n/a")}</b></span>'
+                  f'<span>Fee <b>{fee_txt}</b></span></div></div>')
+
+    bars = mmf_bars(watch, avg)
+    hist = mmf_history_svg(mmf)
+    hist_legend = ""
+    if hist:
+        hist_legend = '<div class="legend">' + "".join(
+            f'<span><i style="display:inline-block;width:10px;height:10px;border-radius:3px;'
+            f'background:var(--c{i % 5});margin-right:5px"></i>{e(w["watch_name"])}</span>'
+            for i, w in enumerate(watch)
+            if len((mmf.get("history") or {}).get(w["key"]) or []) >= 2) + '</div>'
+
+    watched_keys = [(w.get("watch_name") or "").lower() for w in watch]
+
+    def is_watched(r):
+        n = (r.get("name") or "").lower()
+        return any(k and (k in n or n in k) for k in watched_keys)
+
+    rows = ""
+    for r in all_mmfs[:15]:
+        y, net, fee = r.get("yield"), r.get("net"), r.get("fee")
+        star = ' <span class="badge b-kw">watched</span>' if is_watched(r) else ""
+        rows += (f'<tr><td class="mono">#{r.get("rank")}</td><td>{e(trunc(r.get("name"), 34))}{star}</td>'
+                 f'<td class="num mono"><b>{f"{y:.2f}%" if y is not None else "n/a"}</b></td>'
+                 f'<td class="num mono">{f"{net:.2f}%" if net is not None else "n/a"}</td>'
+                 f'<td class="mono">{e(r.get("aum") or "-")}</td><td class="mono">{e(r.get("min") or "-")}</td>'
+                 f'<td class="num mono">{f"{fee:.2f}%" if fee is not None else "n/a"}</td></tr>')
+    table = (f'<div class="tbl-wrap"><table><thead><tr><th>#</th><th>Fund</th><th class="num">Yield</th>'
+             f'<th class="num">After tax</th><th>AUM</th><th>Min</th><th class="num">Fee</th></tr></thead>'
+             f'<tbody>{rows}</tbody></table></div>') if rows else ""
+
     explain = ('<div class="card explain"><h3>' + icon("graduation-cap") + 'Reading MMF yields</h3><ul>'
-               '<li><b>Published yields are historical.</b> An "effective annual yield" is what the fund earned recently, '
-               'annualised. It is not a promised return.</li>'
-               '<li><b>Yields track short-term rates.</b> When Treasury bill rates and the CBK rate fall, MMF yields usually '
-               'drift down weeks later. When they rise, yields follow.</li>'
-               '<li><b>Compare net of fees.</b> Check whether a quoted yield is before or after the management fee, and '
-               'whether withholding tax (15% on interest) has been deducted.</li>'
-               '<li><b>A sharp yield jump needs a reason.</b> It can mean riskier holdings or a one-off gain. Read the fund '
-               'fact sheet before moving money.</li></ul></div>')
-    body = (f'<div class="funds">{chips}</div>' + f'<div class="two">{explain}'
-            + not_connected("Kenyan MMF yields",
-                            "Latest published annualised yields, history chart, fees, minimum investment, withdrawal "
-                            "terms and fund manager for each fund, side by side.",
-                            "A collector for each fund manager's published daily/weekly yields, or the CMA quarterly "
-                            "CIS report. Yields would be stored daily in data/ so trends build over time.",
-                            (("CMA – Collective Investment Schemes", "https://www.cma.or.ke/"),)) + '</div>')
+               '<li><b>Published yields are historical.</b> An "effective annual yield" is what the fund earned '
+               'recently, annualised. It is not a promised return.</li>'
+               '<li><b>Yields track short-term rates.</b> When Treasury bill rates and the CBK rate fall, MMF yields '
+               'usually drift down weeks later. When they rise, yields follow.</li>'
+               '<li><b>Compare net of fees.</b> Check whether a quoted yield is before or after the management fee, '
+               'and whether withholding tax (15% on interest) has been deducted.</li>'
+               '<li><b>A sharp yield jump needs a reason.</b> It can mean riskier holdings or a one-off gain. Read the '
+               'fund fact sheet before moving money.</li></ul></div>')
+
+    macro = mmf.get("macro") or {}
+    macro_html = ""
+    if macro:
+        items = []
+        if macro.get("cbr") is not None:
+            items.append(f'<span class="kpi"><span>CBK rate</span><b>{macro["cbr"]:.2f}%</b></span>')
+        if macro.get("inflation") is not None:
+            items.append(f'<span class="kpi"><span>Inflation (YoY)</span><b>{macro["inflation"]:.1f}%</b></span>')
+        if macro.get("usdkes") is not None:
+            items.append(f'<span class="kpi"><span>USD/KES</span><b>{macro["usdkes"]:.2f}</b></span>')
+        if avg is not None:
+            items.append(f'<span class="kpi"><span>MMF average</span><b>{avg:.2f}%</b></span>')
+        macro_html = f'<div class="kpis" style="margin-bottom:16px">{"".join(items)}</div>'
+
+    body = macro_html + f'<div class="fund-cards">{cards}</div>'
+    if bars:
+        body += (f'<div class="card"><h3>{icon("bar-chart-horizontal")}Yield comparison</h3>{bars}'
+                 f'<div class="legend"><span><i class="sw seq"></i>Published yield</span>'
+                 f'<span><i class="sw seq-strong"></i>After 15% withholding tax</span>'
+                 + (f'<span><i class="sw avg"></i>Market average {avg:.2f}%</span>' if avg else "")
+                 + '</div></div>')
+    if hist:
+        body += f'<div class="card"><h3>{icon("chart-spline")}Yield history - daily readings</h3>{hist}{hist_legend}</div>'
+    if table:
+        body += f'<h3 class="sub-h">{icon("list-ordered")}All shilling MMFs by yield</h3>{table}'
+    body += explain
+    body += provenance(f"{e(mmf.get('source', 'Serrari Group'))} · figures as at {e(as_of or 'n/a')} · yields are the "
+                       "managers' published figures, net of fees and before 15% withholding tax unless labelled after "
+                       "tax · history builds daily in data/mmf_history.json")
     return section(10, "mmf", "piggy-bank", "MMF & Investment Updates",
-                   "Past yields do not guarantee future returns. This section never shows a yield it could not source.",
+                   "Past yields do not guarantee future returns. Every figure is linked to a published source.",
                    body, "var(--teal)")
 
 
@@ -919,6 +1116,18 @@ def render_email(ctx):
         mk += (f'<tr><td style="padding:6px 0;font:600 13px Consolas,monospace;color:{ink}">{e(r["sym"])}</td>'
                f'<td style="padding:6px 0;font:13px Consolas,monospace;color:{ink};text-align:right">{cur}{r["price"]:,.2f}</td>'
                f'<td style="padding:6px 0 6px 14px;font:700 13px Consolas,monospace;color:{col(r["pct"])};text-align:right">{fmt_pct(r["pct"])}</td></tr>')
+    mmf_rows = ""
+    for w in (ctx.get("mmf") or {}).get("watch") or []:
+        if w.get("yield") is None:
+            continue
+        net = f'{w["net"]:.2f}%' if w.get("net") is not None else "n/a"
+        mmf_rows += (f'<tr><td style="padding:6px 0;font:600 13px Segoe UI,Arial;color:{ink}">{e(w["watch_name"])}</td>'
+                     f'<td style="padding:6px 0;font:12px Segoe UI,Arial;color:{mut};text-align:right">{e(w.get("kind") or "")}</td>'
+                     f'<td style="padding:6px 0;font:700 13px Consolas,monospace;color:{ink};text-align:right">{w["yield"]:.2f}%</td>'
+                     f'<td style="padding:6px 0;font:12px Consolas,monospace;color:{mut};text-align:right">{net}</td></tr>')
+    mmf = (f'{h("MMF & special-fund yields", "#14B8A6")}'
+           f'<tr><td style="padding:0 24px"><table role="presentation" width="100%" cellspacing="0" cellpadding="0">{mmf_rows}</table>'
+           f'<div style="font:11px Segoe UI,Arial;color:{mut}">Published yields before 15% withholding tax; after-tax shown where published. Not investment advice.</div></td></tr>') if mmf_rows else ""
     evs = ""
     for ev in sorted(P["events"], key=lambda x: (-x["register_now"], x["dt"]))[:4]:
         tag = f'<span style="color:{down};font-weight:700"> · REGISTER SOON</span>' if ev["register_now"] else ""
@@ -940,6 +1149,7 @@ def render_email(ctx):
 {h("Top stories")}{stories}
 {h("Markets · last close", "#16A34A") if mk else ""}
 {f'<tr><td style="padding:0 24px"><table role="presentation" width="100%" cellspacing="0" cellpadding="0">{mk}</table><div style="font:11px Segoe UI,Arial;color:{mut}">NSE end-of-day · US via Yahoo Finance (delayed)</div></td></tr>' if mk else ""}
+{mmf}
 {h("Nairobi events", "#DB2777") if evs else ""}{evs}
 {h("Worth watching", "#F59E0B") if ops else ""}
 {f'<tr><td style="padding:0 24px"><ul style="margin:0;padding-left:18px;font:13px/1.5 Segoe UI,Arial;color:#1E293B">{ops}</ul></td></tr>' if ops else ""}
@@ -954,12 +1164,12 @@ CSS = r"""
 --amber:#F59E0B;--pink:#EC4899;--orange:#F97316;
 --bg:#F8FAFC;--surface:#FFFFFF;--surface-2:#F1F5F9;--border:#E2E8F0;--ink:#0F172A;--ink-2:#334155;--muted:#64748B;
 --up:#16A34A;--up-ink:#15803D;--down:#EF4444;--down-ink:#DC2626;--flat:#94A3B8;
---c0:#2563EB;--c1:#0D9488;--c2:#7C3AED;--c3:#D97706;--c4:#DB2777;
+--c0:#2563EB;--c1:#0D9488;--c2:#7C3AED;--c3:#D97706;--c4:#DB2777;--c5:#0F766E;
 --shadow:0 1px 2px rgba(15,23,42,.04),0 4px 16px rgba(15,23,42,.06);--shadow-h:0 2px 4px rgba(15,23,42,.06),0 12px 28px rgba(15,23,42,.1);
 --r:14px;--font:Inter,ui-sans-serif,system-ui,"Segoe UI",Roboto,sans-serif;--mono:"JetBrains Mono",ui-monospace,Consolas,monospace}
 [data-theme=dark]{--bg:#0B1120;--surface:#101827;--surface-2:#162033;--border:#1F2A40;--ink:#E5E9F0;--ink-2:#CBD5E1;--muted:#94A3B8;
 --up:#22C55E;--up-ink:#4ADE80;--down:#F87171;--down-ink:#F87171;--flat:#64748B;
---c0:#3B82F6;--c1:#0D9488;--c2:#8B5CF6;--c3:#D97706;--c4:#EC4899;
+--c0:#3B82F6;--c1:#0D9488;--c2:#8B5CF6;--c3:#D97706;--c4:#EC4899;--c5:#14B8A6;
 --shadow:0 1px 2px rgba(0,0,0,.3);--shadow-h:0 10px 30px rgba(0,0,0,.45)}
 *{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:120px}
 body{margin:0;overflow-x:hidden;background:var(--bg);color:var(--ink);font:15px/1.55 var(--font);-webkit-font-smoothing:antialiased}
@@ -1112,6 +1322,7 @@ font:13px var(--mono);color:var(--muted);border-bottom:2px solid transparent}
 .seg.on{background:var(--surface);color:var(--ink);box-shadow:var(--shadow)}
 svg.chart{width:100%;height:auto;display:block;overflow:visible}
 .chart .grid{stroke:var(--border);stroke-width:1}.chart .zero{stroke:var(--muted);stroke-width:1}
+.chart .avgline{stroke:var(--amber);stroke-width:1.6;stroke-dasharray:5 4}
 .chart .axis{fill:var(--muted);font:11px var(--mono)}.chart .lbl{fill:var(--ink);font:600 12px var(--mono)}
 .chart .val{fill:var(--ink-2);font:600 12px var(--mono)}
 .chart .candleview line{stroke-width:1.2}.chart .candleview.up line{stroke:var(--up)}.chart .candleview.down line{stroke:var(--down)}
@@ -1166,6 +1377,18 @@ background:repeating-linear-gradient(135deg,transparent 0 12px,color-mix(in srgb
 .funds{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px}
 .fund{display:inline-flex;gap:8px;align-items:center;background:var(--surface);border:1px solid var(--border);padding:8px 14px;border-radius:12px;font-weight:600;font-size:14px}
 .fund .ic{color:var(--teal)}.fund em{font-style:normal;font-weight:500;font-size:12px;color:var(--muted)}
+.fund-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;margin-bottom:18px}
+.fund-card{display:flex;flex-direction:column;gap:8px}
+.fund-card-h{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.fund-card-h b{font-size:15px;line-height:1.25}
+.fund-card-v{font:800 26px var(--mono);color:var(--ink)}
+.fund-card-s{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:13px;color:var(--muted)}
+.fund-card-m{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--muted);border-top:1px solid var(--border);padding-top:8px}
+.fund-card-m b{color:var(--ink-2);font-family:var(--mono)}
+.sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.sw.seq{background:color-mix(in srgb,var(--teal) 45%,var(--surface))}
+.sw.seq-strong{background:var(--teal)}
+.sw.avg{background:var(--amber);width:3px;border-radius:1px}
 .explain ul{margin:0;padding-left:18px;font-size:13.5px;color:var(--ink-2)}.explain li{margin-bottom:8px}
 .two>.nc{margin-top:0}
 .banner-note{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:color-mix(in srgb,var(--orange) 8%,var(--surface));

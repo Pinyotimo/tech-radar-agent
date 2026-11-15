@@ -34,6 +34,8 @@ making predictions about upcoming tech trends and opportunities.
 - GitHub Actions generates the regular digest three times daily in Africa/Nairobi time.
 - A separate alert run executes every 30 minutes and deduplicates GitHub activity, releases, security notifications,
   3%+ watchlist moves, and keyword-matching news or Reddit posts in `data/alert_state.json`.
+- The digest also collects Kenyan money-market and special-fund yields (Oak, Mansa-X, Arvocap, Cytonn, Etica plus the
+  full MMF table), the NSE book-closure / dividend calendar, and the week's best and worst NSE counters.
 - Configure `GROQ_API_KEY`, `GMAIL_APP_PASSWORD`, `GH_PAT`, `TELEGRAM_BOT_TOKEN`, and `TELEGRAM_CHAT_ID`
   as repository secrets for unattended delivery.
 - Groq uses `llama-3.1-8b-instant` by default; set `GROQ_MODEL` to another currently available Groq model if needed.
