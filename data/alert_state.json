@@ -1,5 +1,5 @@
 {
-  "last_run": "2026-11-15T01:54:46.436287+03:00",
+  "last_run": "2026-11-15T05:23:21.209973+03:00",
   "seen": [
     "global:2026-11-11:NVDA:-5.47",
     "global:2026-11-11:META:5.12",
@@ -73,6 +73,8 @@
     "news:https://www.bleepingcomputer.com/news/security/us-disrupts-north-korean-campaign-behind-400-million-crypto-theft/",
     "news:https://techcrunch.com/2026/11/14/the-ai-graveyard-a-running-list-of-projects-and-startups-that-didnt-make-it/",
     "news:https://www.theverge.com/podcast/1032907/helen-toner-openai-cset-ai-safety-policy-interview",
-    "nse:2026-11-15:COOP:5.94"
+    "nse:2026-11-15:COOP:5.94",
+    "news:https://capitalfm.africa/kansai-plascon-targets-east-africa-growth-on-rising-paint-demand/?utm_source=rss&utm_medium=feed&utm_campaign=feed-business",
+    "news:https://nairobileo.co.ke/business/article/31432/quickmart-officially-joins-nairobi-securities-exchange"
   ]
 }
