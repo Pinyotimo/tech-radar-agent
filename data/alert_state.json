@@ -1,5 +1,5 @@
 {
-  "last_run": "2026-11-15T05:23:21.209973+03:00",
+  "last_run": "2026-11-15T12:44:28.207676+03:00",
   "seen": [
     "global:2026-11-11:NVDA:-5.47",
     "global:2026-11-11:META:5.12",
@@ -75,6 +75,11 @@
     "news:https://www.theverge.com/podcast/1032907/helen-toner-openai-cset-ai-safety-policy-interview",
     "nse:2026-11-15:COOP:5.94",
     "news:https://capitalfm.africa/kansai-plascon-targets-east-africa-growth-on-rising-paint-demand/?utm_source=rss&utm_medium=feed&utm_campaign=feed-business",
-    "news:https://nairobileo.co.ke/business/article/31432/quickmart-officially-joins-nairobi-securities-exchange"
+    "news:https://nairobileo.co.ke/business/article/31432/quickmart-officially-joins-nairobi-securities-exchange",
+    "news:https://thehackernews.com/2026/11/stolen-fireworks-ai-key-led-to-cursor.html",
+    "news:https://news.google.com/rss/articles/CBMivAFBVV95cUxQR2dSQzhleUtKU29Jbk5GUndIbnRZUTF5dnk3NzBqOVBZLTlxZ2d0OXJuZ2t1RG9GbWNSRzY0SjI1S2lHdy1saWVFQ0p5YVFZMU04RlFleVZtVEgwMFIxcy1ocmpJTU9OeVpWQmVXNUFLWGVkUThkMG5LYmsxazQzcXQwRldqNnB1UVZDNWJ6eWN2YTRBSkVGYVdTLTVhWmNpVVE0SnlDRTVpQ0MwTGhrNlNKMy1Dby00Q1FQMQ?oc=5",
+    "news:https://news.google.com/rss/articles/CBMimAFBVV95cUxNa1o2eVQ2Mkt3SU14SDFZcXZTZ3c4b2NleVhmQ2xoT3pjOWVlbVZYVmRkYXFrbjdWYUFCYnRaVUtsa3RuY01qaERQRmRyRjFkVURmc25VT282WWZDTVRjNklrV1lCYTBqVmJkWUxqckZUcWVVYlNaMUNSVk5iZ0JpWHpGVXRob2dPNExLYV95UkVDRU90SFFHMw?oc=5",
+    "news:https://news.google.com/rss/articles/CBMixgFBVV95cUxQelNnUzU1elppbldqZjJBVklGVURkNU84YlRwSzdmckVVVTJOQS1QXzNiNGZfcWdFdDVrVDk3YzlieXo4VXRHNmN1NjQtTG5yTC1DTE5PZWVYcjZoUklTZUxiMF9ROF9uMlJJZUFBWC1PVzhIMDlyNHpYNnNCNjJmRGZ2ajcxWVRrbUNvZ3NLY1JHbUQ2bDJzTXdXbWtGOVNBUU1hMHpHakFRNkhHLVkxSkxVTlFtOEktQTRfaExMUFpTNTNTMkE?oc=5",
+    "reddit:https://www.reddit.com/r/rust/comments/1xwiewq/i_wrote_some_crates_for_personal_use_at_what/"
   ]
 }
