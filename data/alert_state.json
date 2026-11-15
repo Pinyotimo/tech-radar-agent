@@ -1,5 +1,5 @@
 {
-  "last_run": "2026-11-15T19:48:00.714722+03:00",
+  "last_run": "2026-11-16T00:28:16.634726+03:00",
   "seen": [
     "global:2026-11-11:NVDA:-5.47",
     "global:2026-11-11:META:5.12",
@@ -83,6 +83,11 @@
     "reddit:https://www.reddit.com/r/rust/comments/1xwiewq/i_wrote_some_crates_for_personal_use_at_what/",
     "news:https://www.theverge.com/podcast/1033948/sony-aibo-robot-dog-version-history",
     "news:https://capitalfm.africa/ruto-hits-back-at-opposition-over-sgr-corruption-claims/?utm_source=rss&utm_medium=feed&utm_campaign=feed-business",
-    "reddit:https://www.reddit.com/r/rust/comments/1xwszc6/i_diffed_uutils_coreutils_against_gnu_with/"
+    "reddit:https://www.reddit.com/r/rust/comments/1xwszc6/i_diffed_uutils_coreutils_against_gnu_with/",
+    "news:https://www.bleepingcomputer.com/news/security/fbi-warns-artex-ai-hacking-tool-is-powering-global-cyberattacks/",
+    "news:https://www.theverge.com/science/1034006/vulcan-rocket-fails-destroying-40-amazon-leo-satellites",
+    "news:https://www.theverge.com/ai-artificial-intelligence/1033984/congress-export-rules-ai-chips-china",
+    "news:https://techcrunch.com/2026/11/15/flaming-hydras-new-kickstarter-campaign-rethinks-e-book-ownership-and-digital-lending/",
+    "reddit:https://www.reddit.com/r/java/comments/1xx4b7b/graphcompose_250_docx_support_ai_workflow_and/"
   ]
 }
