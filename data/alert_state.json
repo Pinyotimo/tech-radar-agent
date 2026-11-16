@@ -1,5 +1,5 @@
 {
-  "last_run": "2026-11-16T00:28:16.634726+03:00",
+  "last_run": "2026-11-16T04:20:07.501856+03:00",
   "seen": [
     "global:2026-11-11:NVDA:-5.47",
     "global:2026-11-11:META:5.12",
@@ -88,6 +88,8 @@
     "news:https://www.theverge.com/science/1034006/vulcan-rocket-fails-destroying-40-amazon-leo-satellites",
     "news:https://www.theverge.com/ai-artificial-intelligence/1033984/congress-export-rules-ai-chips-china",
     "news:https://techcrunch.com/2026/11/15/flaming-hydras-new-kickstarter-campaign-rethinks-e-book-ownership-and-digital-lending/",
-    "reddit:https://www.reddit.com/r/java/comments/1xx4b7b/graphcompose_250_docx_support_ai_workflow_and/"
+    "reddit:https://www.reddit.com/r/java/comments/1xx4b7b/graphcompose_250_docx_support_ai_workflow_and/",
+    "news:https://techcrunch.com/2026/11/15/indian-chip-startup-bharat-semi-lands-24m-seed-round-as-it-eyes-global-ai-sensor-market/",
+    "news:https://techcrunch.com/2026/11/15/is-bad-news-for-jensen-huang-also-bad-news-for-the-ai-industry/"
   ]
 }
