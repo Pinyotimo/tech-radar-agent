@@ -1,5 +1,5 @@
 {
-  "last_run": "2026-11-17T05:18:06.434232+03:00",
+  "last_run": "2026-11-17T13:57:55.773056+03:00",
   "seen": [
     "global:2026-11-11:NVDA:-5.47",
     "global:2026-11-11:META:5.12",
@@ -126,6 +126,10 @@
     "news:https://www.theverge.com/ai-artificial-intelligence/1034815/california-openai-hugging-face-lawsuit",
     "news:https://techcrunch.com/2026/11/16/california-state-ag-sues-openai-over-rogue-agent-incidents/",
     "news:https://news.google.com/rss/articles/CBMiqAFBVV95cUxNeE9acmNUQ2U4QlhkQTdxb1E2R1lrelU3Ym8yQlpfRmZxcWxmZUc4Q3F4dV9ULURFczNqaWxwdkVYeThYN1AyNGZFUzlkcVhzN1UyMXhpNl9vamUxbkhXMFBfYjZ6dWRUTEZMN241TXBzaUx1QkFLS0tBRWJncDFhOE90ZWxOWE1ta0tiZjdpNHF6MWQ0M1k0Nnl2amhFdUxNRlFxT1o4R3U?oc=5",
-    "news:https://news.google.com/rss/articles/CBMihwFBVV95cUxQRWIxUEdBLTdwXzVRc3NRdHJjR1I2NTR3VTRYd0hKaGsxRXJ2TXM0OTNzZ0xrYWZHMUNsTDcxNUpKSjNRc2IwVmtSMGE3ajZILUpzeWw5NzBBeldtOVZCYy1ySjZRem9xdHBBMzJfclZkVkxKNkdsYmRXLXRRTGsycDNKblhDeEk?oc=5"
+    "news:https://news.google.com/rss/articles/CBMihwFBVV95cUxQRWIxUEdBLTdwXzVRc3NRdHJjR1I2NTR3VTRYd0hKaGsxRXJ2TXM0OTNzZ0xrYWZHMUNsTDcxNUpKSjNRc2IwVmtSMGE3ajZILUpzeWw5NzBBeldtOVZCYy1ySjZRem9xdHBBMzJfclZkVkxKNkdsYmRXLXRRTGsycDNKblhDeEk?oc=5",
+    "global:2026-11-17:NVDA:-4.12",
+    "global:2026-11-17:GOOGL:-4.07",
+    "global:2026-11-17:AMZN:-3.34",
+    "reddit:https://www.reddit.com/r/csharp/comments/1xygdgh/xray_open_source_c_libraries_to_read_pdf_office/"
   ]
 }
