@@ -1,5 +1,5 @@
 {
-  "last_run": "2026-11-17T13:57:55.773056+03:00",
+  "last_run": "2026-11-17T22:41:50.081460+03:00",
   "seen": [
     "global:2026-11-11:NVDA:-5.47",
     "global:2026-11-11:META:5.12",
@@ -130,6 +130,19 @@
     "global:2026-11-17:NVDA:-4.12",
     "global:2026-11-17:GOOGL:-4.07",
     "global:2026-11-17:AMZN:-3.34",
-    "reddit:https://www.reddit.com/r/csharp/comments/1xygdgh/xray_open_source_c_libraries_to_read_pdf_office/"
+    "reddit:https://www.reddit.com/r/csharp/comments/1xygdgh/xray_open_source_c_libraries_to_read_pdf_office/",
+    "news:https://www.bleepingcomputer.com/news/apple/apple-reports-outages-affecting-icloud-mail-applecare-and-more/",
+    "news:https://www.bleepingcomputer.com/news/security/researchers-hijack-hugging-face-account-for-popular-kokoro-ai-model/",
+    "news:https://thehackernews.com/2026/11/trigram-campaign-impersonates-about-50.html",
+    "news:https://thehackernews.com/2026/11/hackers-found-way-around-github-sha.html",
+    "news:https://thehackernews.com/2026/11/researchers-detail-iphone-flaw-that-let.html",
+    "news:https://www.theverge.com/tech/1035805/framework-wireless-touchpad-keyboard-preorder-open",
+    "news:https://techcrunch.com/2026/11/17/model-ml-raises-250m-to-automate-investment-banking-grunt-work/",
+    "news:https://www.theverge.com/gadgets/1035085/jbl-tour-one-m3-deal-sale-black-friday-2026",
+    "news:https://www.theverge.com/tech/1035756/google-spark-ai-tasks-free",
+    "news:https://news.google.com/rss/articles/CBMifEFVX3lxTFBPYXZfSDNGcWdMUHV1ZnBkRHNCVnZfZFl2S0NyTUR3aC1waU0yQW9ZZHllQVhtSFc3dER4U2VxbVFhQnljZzdSQ012TWUtZUlVcG5pQjVrSUpPbHlvcV92TjA2b0luT0ZyV2JMZ1pEd0hQMndqTXlIMmpIRWk?oc=5",
+    "news:https://news.google.com/rss/articles/CBMivwFBVV95cUxOcGxZYlVrNlBVTmtuNTJ1cFpfNTVEVGo2cXlFMm4xNmFkR012VnZkcFdVQVBOV3dxN1FjeFAwVzFJbThTUDFJOUtmLUZvZGNmLVVnV1FjM2l0MmktYmtEaDBCNF9RZi1mM2lmdENiUk95MUFVbWhBc1pzNlJtZFlVMmhqeExFVlZSMy1CWmR6c3MzRi1vZVU1S2hpTnpUZmE4a2VJbUVJanR0QVBCYTJLV2hEbnJheDBaWEY2NkJ1VQ?oc=5",
+    "reddit:https://www.reddit.com/r/rust/comments/1xybhd0/rustup_component_list_uninstall_can_reclaim_a/",
+    "reddit:https://www.reddit.com/r/csharp/comments/1xyltfg/i_benchmarked_my_c_binance_client_against_the_two/"
   ]
 }
