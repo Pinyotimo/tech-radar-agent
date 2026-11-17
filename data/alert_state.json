@@ -1,5 +1,5 @@
 {
-  "last_run": "2026-11-16T21:46:32.019043+03:00",
+  "last_run": "2026-11-17T05:18:06.434232+03:00",
   "seen": [
     "global:2026-11-11:NVDA:-5.47",
     "global:2026-11-11:META:5.12",
@@ -113,6 +113,19 @@
     "news:https://news.google.com/rss/articles/CBMivAFBVV95cUxQNjc4ZlJLUWZhOWlsdlhOc1ZjMzNqamFoM2JJWVJ2MnBzOXVrbm5jVktMVENYbjVPVHJJWWR4MlZWa284U1ltTl9YTnZLVzlacG1iT2s5TE5GQ2pLMnM4VldieXZSNmRLVmxrTnB0ck5EQVFuelM4a3FXc3RiejJKRU5RcVZYN0hJb0hGSDRKckUwRTd5MGtCOTBHaDM4cmtFbVlpYkRhVWRMWC0tVUNYWVdha09KVXhmSXU1cw?oc=5",
     "news:https://capitalfm.africa/kenya-retains-global-telecoms-policy-seat-in-four-year-term/?utm_source=rss&utm_medium=feed&utm_campaign=feed-business",
     "news:https://nairobileo.co.ke/business/article/31494/nigerian-firm-acquires-10percent-stake-in-nairobi-securities-exchange",
-    "reddit:https://www.reddit.com/r/rust/comments/1xxseyy/compiler_performance_the_nextgen_trait_solver/"
+    "reddit:https://www.reddit.com/r/rust/comments/1xxseyy/compiler_performance_the_nextgen_trait_solver/",
+    "news:https://www.bleepingcomputer.com/news/security/optimizely-supply-chain-attack-infects-major-brands-sites-with-malware/",
+    "news:https://www.bleepingcomputer.com/news/security/gemini-ai-agents-repeatedly-bypassed-safeguards-to-attack-real-website/",
+    "news:https://www.bleepingcomputer.com/news/security/google-project-zero-cuts-bug-disclosure-deadline-to-30-days-amid-ai-threats/",
+    "news:https://www.bleepingcomputer.com/news/security/california-sues-openai-over-ai-agents-escaping-sandboxes-hacking-firms/",
+    "news:https://www.bleepingcomputer.com/news/security/barracuda-links-cloud-breach-to-artex-ai-powered-cyberattack/",
+    "news:https://techcrunch.com/2026/11/16/cybersecurity-ai-startup-corma-reaches-1b-valuation-in-about-3-months/",
+    "news:https://www.theverge.com/tech/1035027/tech-leaders-nvidia-jensen-huang-theories",
+    "news:https://www.theverge.com/transportation/1035025/united-airlines-outage-down-departures",
+    "news:https://techcrunch.com/2026/11/16/apple-reveals-new-mac-security-controls-as-ai-agents-raise-privacy-risks/",
+    "news:https://www.theverge.com/ai-artificial-intelligence/1034815/california-openai-hugging-face-lawsuit",
+    "news:https://techcrunch.com/2026/11/16/california-state-ag-sues-openai-over-rogue-agent-incidents/",
+    "news:https://news.google.com/rss/articles/CBMiqAFBVV95cUxNeE9acmNUQ2U4QlhkQTdxb1E2R1lrelU3Ym8yQlpfRmZxcWxmZUc4Q3F4dV9ULURFczNqaWxwdkVYeThYN1AyNGZFUzlkcVhzN1UyMXhpNl9vamUxbkhXMFBfYjZ6dWRUTEZMN241TXBzaUx1QkFLS0tBRWJncDFhOE90ZWxOWE1ta0tiZjdpNHF6MWQ0M1k0Nnl2amhFdUxNRlFxT1o4R3U?oc=5",
+    "news:https://news.google.com/rss/articles/CBMihwFBVV95cUxQRWIxUEdBLTdwXzVRc3NRdHJjR1I2NTR3VTRYd0hKaGsxRXJ2TXM0OTNzZ0xrYWZHMUNsTDcxNUpKSjNRc2IwVmtSMGE3ajZILUpzeWw5NzBBeldtOVZCYy1ySjZRem9xdHBBMzJfclZkVkxKNkdsYmRXLXRRTGsycDNKblhDeEk?oc=5"
   ]
 }
