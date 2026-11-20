@@ -1,5 +1,5 @@
 {
-  "last_run": "2026-11-20T11:04:06.433334+03:00",
+  "last_run": "2026-11-20T20:06:51.774190+03:00",
   "seen": [
     "global:2026-11-11:NVDA:-5.47",
     "global:2026-11-11:META:5.12",
@@ -192,6 +192,12 @@
     "news:https://techcrunch.com/2026/11/19/apple-may-be-developing-its-own-ai-agent-that-runs-your-mac/",
     "news:https://news.google.com/rss/articles/CBMif0FVX3lxTFBwN1l3Z19NakRmZEppSGtKMU90LWpTenZRZXQ4cEdjbTE5XzNTSXhHMzNsYi1ZaGR5OFdJVFVzaFdRSmdzTFF6c21kTlJJbzR4X0pHWS1DcVJsRUlINTd5ZlpHMWoyeUxNazlVNmJfZTl5S0dMSmJWeEppMnNkSXM?oc=5",
     "news:https://capitalfm.africa/whole-grain-push-targets-kenyas-sh20bn-school-feeding-market/?utm_source=rss&utm_medium=feed&utm_campaign=feed-business",
-    "news:https://capitalfm.africa/lack-of-credit-equipment-limits-womens-gains-in-agriculture/?utm_source=rss&utm_medium=feed&utm_campaign=feed-business"
+    "news:https://capitalfm.africa/lack-of-credit-equipment-limits-womens-gains-in-agriculture/?utm_source=rss&utm_medium=feed&utm_campaign=feed-business",
+    "global:2026-11-20:NVDA:-7.10",
+    "global:2026-11-20:META:-3.79",
+    "news:https://thehackernews.com/2026/11/the-path-to-ai-autonomy-in-soc.html",
+    "news:https://www.theverge.com/ai-artificial-intelligence/1010051/anthropic-riemann-hypothesis-millennium-prize-problem",
+    "news:https://techcrunch.com/2026/11/20/bending-spoons-buys-mailchimp-for-3-68-billion/",
+    "news:https://techcrunch.com/2026/11/20/6-ai-powered-gadgets-that-could-make-your-home-office-smarter/"
   ]
 }
