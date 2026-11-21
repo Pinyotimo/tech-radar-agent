@@ -1,5 +1,5 @@
 {
-  "last_run": "2026-11-21T15:54:37.409322+03:00",
+  "last_run": "2026-11-21T22:55:33.864688+03:00",
   "seen": [
     "global:2026-11-11:NVDA:-5.47",
     "global:2026-11-11:META:5.12",
@@ -213,6 +213,10 @@
     "news:https://news.google.com/rss/articles/CBMingFBVV95cUxObUVTZFRQeVpUWC1ncmFBOGlnMGstanJFWm9ZeDZDYmc2WmZ1Zno4X0hrdXAwM3RYT2FmZFVxWFdWYnZuc2VzSGtBRGVwY2JFZkZYeW5odG1iVjY5MFY0cE9SdGNiV2Q0NmgyanR4aDAzWFEwdlhhLWoxdTdxZ3ZlbkRBSVR3bTNEdGpOelQ2YVB0ZGdLSW1kWXVXLUtEdw?oc=5",
     "news:https://thehackernews.com/2026/11/attackers-ai-agents-found-zero-day-in.html",
     "news:https://thehackernews.com/2026/11/signal-blocks-ai-agents-from-reading.html",
-    "news:https://capitalfm.africa/nairobi-hospital-appoints-kamande-acting-ceo-after-felix-osanos-resignation/?utm_source=rss&utm_medium=feed&utm_campaign=feed-business"
+    "news:https://capitalfm.africa/nairobi-hospital-appoints-kamande-acting-ceo-after-felix-osanos-resignation/?utm_source=rss&utm_medium=feed&utm_campaign=feed-business",
+    "news:https://www.bleepingcomputer.com/news/security/badbox-30-botnet-returns-with-record-breaking-40-billion-daily-ad-requests/",
+    "news:https://www.bleepingcomputer.com/news/security/fbi-reportedly-hacked-again-this-time-targeting-nationwide-police-database/",
+    "news:https://techcrunch.com/2026/11/21/all-the-ai-agents-that-can-live-in-your-text-messages/",
+    "news:https://techcrunch.com/2026/11/21/is-selling-an-ai-version-of-your-face-to-this-microdrama-startup-the-future-of-hollywood/"
   ]
 }
