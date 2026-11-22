@@ -1,5 +1,5 @@
 {
-  "last_run": "2026-11-21T22:55:33.864688+03:00",
+  "last_run": "2026-11-22T03:05:33.808119+03:00",
   "seen": [
     "global:2026-11-11:NVDA:-5.47",
     "global:2026-11-11:META:5.12",
@@ -217,6 +217,12 @@
     "news:https://www.bleepingcomputer.com/news/security/badbox-30-botnet-returns-with-record-breaking-40-billion-daily-ad-requests/",
     "news:https://www.bleepingcomputer.com/news/security/fbi-reportedly-hacked-again-this-time-targeting-nationwide-police-database/",
     "news:https://techcrunch.com/2026/11/21/all-the-ai-agents-that-can-live-in-your-text-messages/",
-    "news:https://techcrunch.com/2026/11/21/is-selling-an-ai-version-of-your-face-to-this-microdrama-startup-the-future-of-hollywood/"
+    "news:https://techcrunch.com/2026/11/21/is-selling-an-ai-version-of-your-face-to-this-microdrama-startup-the-future-of-hollywood/",
+    "global:2026-11-22:NVDA:-14.01",
+    "global:2026-11-22:AMZN:-4.10",
+    "global:2026-11-22:META:-5.93",
+    "news:https://www.theverge.com/tech/1039564/amazon-nyc-council-packages-shipping-label",
+    "news:https://techcrunch.com/2026/11/21/signal-restricts-mobile-screenshots-as-it-confronts-existential-threat-of-ai-surveillance/",
+    "news:https://www.theverge.com/tech/1039554/un-regulations-killer-robots"
   ]
 }
