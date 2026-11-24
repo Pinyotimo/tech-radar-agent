@@ -1,5 +1,5 @@
 {
-  "last_run": "2026-11-24T01:33:43.901825+03:00",
+  "last_run": "2026-11-24T09:44:42.371963+03:00",
   "seen": [
     "global:2026-11-11:NVDA:-5.47",
     "global:2026-11-11:META:5.12",
@@ -247,6 +247,11 @@
     "news:https://www.finextra.com/newsarticle/48796/cftc-loses-emergency-effort-to-block-new-york-action-against-kalshi?utm_medium=rssfinextra&utm_source=finextrafeed",
     "news:https://techcrunch.com/2026/11/23/anthropic-launches-claude-ship-letting-ai-agents-review-fix-and-approve-code-changes/",
     "news:https://techcrunch.com/2026/11/23/supertake-raises-20m-to-let-ai-agents-turn-your-market-predictions-into-stock-portfolios/",
-    "news:https://www.theverge.com/science/1040497/ai-data-centers-electricity-un-climate-summit"
+    "news:https://www.theverge.com/science/1040497/ai-data-centers-electricity-un-climate-summit",
+    "news:https://thehackernews.com/2026/11/openai-and-cisco-unveil-ai-assisted.html",
+    "news:https://thehackernews.com/2026/11/hackers-exploit-n-able-mailassure-flaw.html",
+    "news:https://www.finextra.com/newsarticle/48800/lloyds-publishes-guide-on-scaling-ai-responsibly?utm_medium=rssfinextra&utm_source=finextrafeed",
+    "news:https://www.theverge.com/tech/1041000/kagi-mail-email-google-gmail-alternative",
+    "news:https://www.theverge.com/tech/1040872/ladybird-indie-browser-engine-alpha-testing"
   ]
 }
