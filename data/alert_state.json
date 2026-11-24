@@ -1,5 +1,5 @@
 {
-  "last_run": "2026-11-24T09:44:42.371963+03:00",
+  "last_run": "2026-11-24T21:37:45.033517+03:00",
   "seen": [
     "global:2026-11-11:NVDA:-5.47",
     "global:2026-11-11:META:5.12",
@@ -252,6 +252,20 @@
     "news:https://thehackernews.com/2026/11/hackers-exploit-n-able-mailassure-flaw.html",
     "news:https://www.finextra.com/newsarticle/48800/lloyds-publishes-guide-on-scaling-ai-responsibly?utm_medium=rssfinextra&utm_source=finextrafeed",
     "news:https://www.theverge.com/tech/1041000/kagi-mail-email-google-gmail-alternative",
-    "news:https://www.theverge.com/tech/1040872/ladybird-indie-browser-engine-alpha-testing"
+    "news:https://www.theverge.com/tech/1040872/ladybird-indie-browser-engine-alpha-testing",
+    "global:2026-11-24:NVDA:-6.91",
+    "news:https://thehackernews.com/2026/11/iran-aligned-volant-manticore-uses-ipfs.html",
+    "news:https://www.bleepingcomputer.com/news/security/shinyhunters-resurfaces-after-fbi-arrests-uses-old-pgp-keys-as-proof/",
+    "news:https://www.finextra.com/newsarticle/48806/nab-ceo-hits-out-at-instagram-accounts-salacious-claims?utm_medium=rssfinextra&utm_source=finextrafeed",
+    "news:https://www.finextra.com/newsarticle/48804/commerzventures-launches-50m-fund-for-ai-fintechs?utm_medium=rssfinextra&utm_source=finextrafeed",
+    "news:https://www.finextra.com/newsarticle/48802/trustly-raises-60m-from-shareholders-for-ai-powered-growth-plan?utm_medium=rssfinextra&utm_source=finextrafeed",
+    "news:https://techcrunch.com/2026/11/24/anthropic-shares-fall-below-ipo-price-a-worrying-sign-for-ai-startups/",
+    "news:https://www.theverge.com/entertainment/1041417/david-fincher-netflix-cliff-booth-ai-interpositive",
+    "news:https://techcrunch.com/2026/11/24/uk-warns-ai-driven-cyberattacks-are-exposing-years-of-weak-security/",
+    "news:https://www.theverge.com/entertainment/1041362/tidal-ai-music-ban",
+    "news:https://techcrunch.com/2026/11/24/meta-brings-its-muse-ai-assistant-directly-into-instagram-dms/",
+    "news:https://www.theverge.com/tech/1041222/jensen-huang-nvidia-scandal-deepfakes",
+    "news:https://capitalfm.africa/experts-raise-alarm-over-lenient-penalties-in-proposed-pesticide-bill/?utm_source=rss&utm_medium=feed&utm_campaign=feed-business",
+    "news:https://capitalfm.africa/government-adds-sh5bn-to-hustler-fund-raises-borrowing-limits/?utm_source=rss&utm_medium=feed&utm_campaign=feed-business"
   ]
 }
