@@ -1,5 +1,5 @@
 {
-  "last_run": "2026-11-25T15:08:26.897185+03:00",
+  "last_run": "2026-11-26T00:55:30.618068+03:00",
   "seen": [
     "global:2026-11-11:NVDA:-5.47",
     "global:2026-11-11:META:5.12",
@@ -278,6 +278,23 @@
     "news:https://thehackernews.com/2026/11/drupal-fail2install-exploit-details.html",
     "news:https://thehackernews.com/2026/11/ex-openai-employee-accused-of-bugging.html",
     "news:https://thehackernews.com/2026/11/hackers-compromise-24-check-point.html",
-    "news:https://capitalfm.africa/shilling-weakens-to-sh130-20-against-us-dollar-on-importer-demand/?utm_source=rss&utm_medium=feed&utm_campaign=feed-business"
+    "news:https://capitalfm.africa/shilling-weakens-to-sh130-20-against-us-dollar-on-importer-demand/?utm_source=rss&utm_medium=feed&utm_campaign=feed-business",
+    "global:2026-11-26:NVDA:-3.91",
+    "global:2026-11-26:AMZN:-3.12",
+    "global:2026-11-26:META:3.40",
+    "news:https://www.bleepingcomputer.com/news/security/italy-and-switzerland-warn-of-autonomous-ai-driven-cyberattacks/",
+    "news:https://www.bleepingcomputer.com/news/security/more-pentests-without-more-pentesters-where-ai-safely-helps/",
+    "news:https://www.bleepingcomputer.com/news/security/infratrust-warns-of-exploited-supply-chain-flaws-in-network-appliances/",
+    "news:https://thehackernews.com/2026/11/hackers-exploit-two-geoserver-flaws-as.html",
+    "news:https://www.finextra.com/newsarticle/48812/linux-foundation-aims-to-combat-fraud-with-open-financial-trust-alliance?utm_medium=rssfinextra&utm_source=finextrafeed",
+    "news:https://www.theverge.com/entertainment/1042221/google-my-channel-ai-video-patent",
+    "news:https://techcrunch.com/2026/11/25/fcc-approves-spacex-plan-to-put-ai-data-centers-in-space/",
+    "news:https://techcrunch.com/2026/11/25/openai-says-heavy-chatgpt-users-may-hit-limits-sooner-as-it-merges-chat-and-work/",
+    "news:https://www.theverge.com/science/1042109/us-army-detonation-lead-azide-explosives-iowa-ammunition-plant",
+    "news:https://techcrunch.com/2026/11/25/anthropics-dario-amodei-calls-accusations-of-surrendering-human-control-to-ai-absurd/",
+    "news:https://www.theverge.com/tech/1042409/1password-data-breach-leak",
+    "news:https://www.theverge.com/gadgets/1041460/fairphone-6-plus-repairable-phone-black-friday-2026-deal-sale",
+    "news:https://capitalfm.africa/kenyan-firms-risk-data-breaches-as-ai-adoption-outpaces-oversight/?utm_source=rss&utm_medium=feed&utm_campaign=feed-business",
+    "news:https://news.google.com/rss/articles/CBMigAFBVV95cUxOeWNhODQ5b3VZV1VWTWh6bTdaa3hKeTZuTUJsNkdFekRXM3JzaVAteU1WTi1TZm9YZnVfUHFMcG9xSzJhMUVMbUlybVl5QjZxUlZLM1NMNEQwSVVIMmM2ZDFXNHMzUl81bFBvWXljYVZLTThQYnRTU01HUFJCOEJYMQ?oc=5"
   ]
 }
